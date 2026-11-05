@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <!-- Mode "mots" : si un mot n'a pas d'image (partie enseignant), on affiche le mot écrit en anglais -->
+    <script>
+    (function () {
+        function escapeXml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function wrapLines(text) {
+            var words = text.split(/\s+/).filter(Boolean);
+            if (words.length <= 1) return words.length ? words : [''];
+            var lines = [], cur = '';
+            words.forEach(function (w) {
+                if (cur && (cur + ' ' + w).length > 12) { lines.push(cur); cur = w; }
+                else { cur = cur ? cur + ' ' + w : w; }
+            });
+            if (cur) lines.push(cur);
+            return lines.slice(0, 4);
+        }
+        // Génère une "image" (SVG en data-URI) contenant le mot anglais écrit
+        window.makeWordCardImage = function (text) {
+            var lines = wrapLines(String(text || '').trim());
+            var longest = Math.max.apply(null, lines.map(function (l) { return l.length; }).concat([1]));
+            var size = Math.max(34, Math.min(120, Math.floor(340 / (longest * 0.58))));
+            var lineH = size * 1.15;
+            var startY = 200 - ((lines.length - 1) * lineH) / 2;
+            var tspans = lines.map(function (l, i) {
+                return '<text x="200" y="' + (startY + i * lineH) + '" text-anchor="middle" dominant-baseline="central" ' +
+                    'font-family="Segoe UI, Tahoma, Arial, sans-serif" font-weight="800" font-size="' + size + '" fill="#1e293b">' +
+                    escapeXml(l) + '</text>';
+            }).join('');
+            var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">' +
+                '<rect x="8" y="8" width="384" height="384" rx="48" fill="#ffffff" stroke="#fdba74" stroke-width="10"/>' +
+                tspans + '</svg>';
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        };
+        function hasImage(w) {
+            return [w.image, w.img, w.picture, w.src].some(function (v) { return typeof v === 'string' && v.trim() !== ''; });
+        }
+        // Applique le mode "mots" à tous les thèmes enregistrés (sans modifier le stockage)
+        window.withTextFallback = function (themes) {
+            if (!Array.isArray(themes)) return themes;
+            themes.forEach(function (t) {
+                if (!t || !Array.isArray(t.words)) return;
+                t.words.forEach(function (w) {
+                    if (w && !hasImage(w)) {
+                        var label = w.en || w.speech || w.fr || '';
+                        if (label) w.image = window.makeWordCardImage(label);
+                    }
+                });
+            });
+            return themes;
+        };
+    })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>English Weather Racing - CE1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding-top: 60px; box-sizing: border-box; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #000; touch-action: none; select-none: none; -webkit-user-select: none; }
+        
+
+        /* UI Layer Layout */
+        #ui-layer { position: absolute; top: 60px; left: 0; width: 100%; height: calc(100% - 60px); pointer-events: none; display: flex; flex-direction: column; padding: 10px; color: white; }
+        
+        /* Menu Overlay Responsive */
+        .menu-overlay { position: absolute; top: 60px; left: 0; width: 100%; height: calc(100% - 60px); background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; pointer-events: all; padding: 20px; padding-top: 70px; text-align: center; }
+        
+        /* Buttons Responsive */
+        .btn { 
+            pointer-events: all; 
+            background: #ef4444; 
+            color: white; 
+            padding: 12px 24px; 
+            border-radius: 50px; 
+            font-size: 1.2rem; 
+            margin: 8px; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+            border: 3px solid #ffffff; 
+            min-width: 200px; 
+            text-align: center; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
+            font-weight: bold;
+        }
+        .btn:active { transform: scale(0.95); background: #b91c1c; }
+        
+        @media (min-width: 768px) {
+            .btn { padding: 15px 40px; font-size: 1.5rem; min-width: 280px; margin: 15px; border-width: 4px; }
+            #ui-layer { padding: 20px; }
+        }
+
+        /* Progress Box Responsive */
+        .progress-box { background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 30px; font-size: 1rem; border: 2px solid white; pointer-events: none; white-space: nowrap; font-weight: bold; align-self: flex-start; }
+        @media (min-width: 768px) { .progress-box { padding: 10px 25px; font-size: 1.5rem; } }
+
+        /* Message Feedback Responsive */
+        #message { 
+            position: absolute; 
+            top: 40%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-size: clamp(3rem, 10vw, 6rem); 
+            font-weight: 900; 
+            text-shadow: 3px 3px 0px #000; 
+            pointer-events: none; 
+            opacity: 0; 
+            transition: opacity 0.2s; 
+            z-index: 50; 
+            text-align: center; 
+            width: 90%;
+            line-height: 1.1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #message-image {
+            display: none;
+            width: clamp(90px, 22vw, 150px);
+            height: clamp(90px, 22vw, 150px);
+            background: white;
+            border-radius: 20px;
+            border: 4px solid white;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            object-fit: contain;
+            padding: 8px;
+        }
+        
+        #end-screen { position: absolute; top: 60px; left: 0; width: 100%; height: calc(100% - 60px); background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 200; color: white; pointer-events: all; padding: 15px; text-align: center; }
+        .star { font-size: clamp(40px, 10vw, 80px); color: #ffd700; text-shadow: 0 0 20px gold; display: inline-block; animation: pop 0.5s ease-out forwards; opacity: 0; margin: 0 5px; }
+        .trophy { font-size: clamp(80px, 15vw, 120px); animation: bounce 1s infinite alternate; }
+        
+        @keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-20px); } }
+       
+       #confetti-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 300; }
+       
+       /* Control Buttons (Camera & Sound) */
+       .control-btn { 
+           background: #3b82f6; 
+           width: 45px; height: 45px; 
+           border-radius: 50%; 
+           display: flex; align-items: center; justify-content: center; 
+           font-size: 1.2rem; 
+           border: 2px solid white; 
+           cursor: pointer; 
+           pointer-events: all; 
+           transition: transform 0.2s; 
+           box-shadow: 0 4px 10px rgba(0,0,0,0.3); 
+       }
+       .control-btn:active { transform: scale(0.9); }
+       
+       @media (min-width: 768px) {
+           .control-btn { width: 60px; height: 60px; font-size: 1.8rem; border-width: 3px; }
+           .control-btn:hover { transform: scale(1.1); background: #2563eb; }
+       }
+
+       /* Instructions box responsive */
+       #instruction-box {
+           font-size: clamp(1.2rem, 4vw, 2rem);
+           padding: 5px 15px;
+           border-width: 3px;
+           margin-top: 10px;
+       }
+       @media (min-width: 768px) {
+           #instruction-box { padding: 10px 25px; margin-top: 15px; }
+       }
+    </style>
+</head>
+<body>
+
+    <!-- En-tête standard VOCABPLAY -->
+    <header id="vp-header" class="fixed top-0 left-0 right-0 z-[1000] bg-white shadow-md px-3 md:px-4 flex justify-between items-center border-t-4 border-[#012169]" style="height:60px;">
+<button onclick="goBack()" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 text-xs sm:text-sm md:text-base flex items-center gap-2">
+            🏠 Menu Principal
+        </button>
+    </header>
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <div id="menu" class="menu-overlay">
+        <h1 id="theme-title" class="text-4xl md:text-6xl font-black mb-2 md:mb-4 text-yellow-400 italic">WEATHER RACING</h1>
+        <p class="mb-6 md:mb-10 text-xl md:text-2xl text-white font-bold">Listen and Drive!</p>
+        <div class="flex flex-col w-full items-center">
+            <button class="btn" onclick="startGame()">PLAY</button>
+            <button class="btn" style="background:#ef4444;" onclick="goBack()">MAIN MENU</button>
+        </div>
+    </div>
+
+    <div id="end-screen">
+        <div id="end-visuals" class="mb-4 h-32 flex items-center justify-center"></div>
+        <h2 id="end-title" class="text-3xl md:text-5xl font-black mb-2 md:mb-4 italic">WELL DONE!</h2>
+        <p id="end-score" class="text-xl md:text-2xl mb-6 md:mb-8 font-bold"></p>
+        <button class="btn" onclick="location.reload()">PLAY AGAIN</button>
+        <button class="btn" style="background:#ef4444;" onclick="goBack()">MAIN MENU</button>
+    </div>
+
+    <div id="ui-layer">
+        <!-- Main UI Row -->
+        <div class="flex justify-between items-start w-full gap-2">
+            <!-- Left: Quitter + Progress -->
+            <div class="flex flex-col items-start gap-2">
+                    <div class="progress-box" id="progress">0 / 10</div>
+            </div>
+            
+            <!-- Right Column: Buttons & Instruction -->
+            <div class="flex flex-col items-end">
+                <!-- Buttons Row -->
+                <div class="flex gap-2 md:gap-3">
+                    <button class="control-btn bg-purple-500 hover:bg-purple-600" onclick="replayInstruction()" title="Réécouter">🔊</button>
+                    <button class="control-btn" onclick="switchCamera()" title="Changer de vue">📷</button>
+                    <button class="btn !text-sm !p-0 !w-[50px] !h-[45px] md:!w-[80px] md:!h-[60px] !min-w-0 !m-0 !flex !items-center !justify-center !rounded-xl" style="pointer-events: all;" onclick="location.reload()">MENU</button>
+                </div>
+                
+                <!-- Instruction Box -->
+                <div id="instruction-box" class="text-center font-black italic bg-blue-600/80 rounded-full border-white text-white">
+                    <span id="instruction">READY?</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="message">
+        <span id="message-text">GREAT!</span>
+        <img id="message-image" src="" alt="">
+    </div>
+
+    <script>
+        // ==========================================
+        // SYSTÈME DE THÈME DYNAMIQUE
+        // ==========================================
+        let currentTheme = null;
+        let vocabulary = [];
+
+        function loadThemeData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const themeId = urlParams.get('themeId');
+            const savedThemes = withTextFallback(JSON.parse(localStorage.getItem('app_vocab_themes')) || []);
+
+            if (themeId) currentTheme = savedThemes.find(t => t.id === themeId);
+
+            // Fallback uniquement pour permettre au jeu de fonctionner sans thème configuré.
+            if (!currentTheme) {
+                currentTheme = {
+                    name: "Weather",
+                    words: [
+                        { id: 'sunny', en: 'Sunny', speech: "It's sunny", image: 'sunny.png' },
+                        { id: 'cloudy', en: 'Cloudy', speech: "It's cloudy", image: 'cloudy.png' },
+                        { id: 'foggy', en: 'Foggy', speech: "It's foggy", image: 'foggy.png' },
+                        { id: 'raining', en: 'Raining', speech: "It's raining", image: 'raining.png' },
+                        { id: 'snowing', en: 'Snowing', speech: "It's snowing", image: 'snowing.png' },
+                        { id: 'stormy', en: 'Stormy', speech: "It's stormy", image: 'stormy.png' },
+                        { id: 'windy', en: 'Windy', speech: "It's windy", image: 'windy.png' }
+                    ]
+                };
+            }
+
+            vocabulary = Array.isArray(currentTheme.words) ? currentTheme.words : [];
+            maxQuestions = 12;
+
+            document.title = `English Weather Racing - ${currentTheme.name}`;
+            const menuTitle = document.querySelector('#menu h1');
+            if (menuTitle) menuTitle.innerText = currentTheme.name;
+        }
+
+        function goBack() {
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+            const themeParam = (currentTheme && currentTheme.id) ? `?themeId=${currentTheme.id}` : '';
+            window.location.href = `index.html${themeParam}`;
+        }
+
+        // Le jeu conserve son fonctionnement : on utilise simplement le lexique du thème.
+        let vocabBag = [];
+        let lastPicked = null;
+        // Tirage aléatoire : tous les mots sortent avant de se répéter, sans doublon consécutif
+        function getRandomVocabularyItem() {
+            if (vocabBag.length === 0) {
+                vocabBag = vocabulary.slice().sort(() => Math.random() - 0.5);
+                if (vocabBag.length > 1 && lastPicked && vocabBag[vocabBag.length - 1].id === lastPicked.id) {
+                    vocabBag.unshift(vocabBag.pop());
+                }
+            }
+            lastPicked = vocabBag.pop();
+            return lastPicked;
+        }
+
+        let scene, camera, renderer, car, clock;
+        let lanes = [-5, 0, 5];
+        let currentLane = 1;
+        let targetLaneX = 0;
+        let questionCount = 0;
+        let correctAnswers = 0;
+        let maxQuestions = 10;
+        let currentTarget = null;
+        let objects = [];
+        let clouds = [];
+        let scenery = []; 
+        let isPlaying = false;
+        let gameSpeed = 0.6;
+        let roadTiles = [];
+        let smokeParticles = [];
+        let lastSpokenText = "";
+        
+        let cameraMode = 0;
+        const apiKey = "";
+        
+        const textureLoader = new THREE.TextureLoader();
+
+        let confettis = [];
+        const confCanvas = document.getElementById('confetti-canvas');
+        const confCtx = confCanvas.getContext('2d');
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x40a0ff); 
+            scene.fog = new THREE.Fog(0x40a0ff, 30, 150);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / (window.innerHeight - 60), 0.1, 1000);
+            updateCameraPosition();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight - 60);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.1);
+            sunLight.position.set(20, 40, 20);
+            sunLight.castShadow = true;
+            
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+            sunLight.shadow.camera.left = -30;
+            sunLight.shadow.camera.right = 30;
+            sunLight.shadow.camera.top = 30;
+            sunLight.shadow.camera.bottom = -30;
+            
+            scene.add(sunLight);
+
+            // Appel des fonctions de ton design exact
+            createRoad();
+            createCar();
+
+            for(let i=0; i<15; i++) {
+                createCloud(Math.random()*120 - 60, 15 + Math.random()*10, -Math.random()*150);
+            }
+            
+            for(let i=0; i<25; i++) {
+                createTree(Math.random() > 0.5 ? 12 + Math.random()*5 : -12 - Math.random()*5, -i * 12);
+            }
+
+            clock = new THREE.Clock();
+            resizeConfetti();
+            animate();
+
+            window.addEventListener('touchstart', (e) => {
+                if(!isPlaying) return;
+                if(e.target.closest('button')) return;
+                
+                const touchX = e.touches[0].clientX;
+                const screenWidth = window.innerWidth;
+                
+                if (touchX < screenWidth / 2) {
+                    if (currentLane > 0) currentLane--;
+                } else {
+                    if (currentLane < 2) currentLane++;
+                }
+                targetLaneX = lanes[currentLane];
+            }, { passive: false });
+        }
+
+        function switchCamera() {
+            cameraMode = (cameraMode + 1) % 3;
+            const modes = ["VUE ARRIÈRE", "VUE CAPOT", "VUE AÉRIENNE"];
+            showFeedback(modes[cameraMode], "#ffffff");
+        }
+
+        function replayInstruction() {
+            if(isPlaying && lastSpokenText) {
+                speak(lastSpokenText);
+            }
+        }
+
+        function updateCameraPosition() {
+            if (!car) return;
+
+            if (cameraMode === 0) {
+                const targetPos = new THREE.Vector3(0, 6, 12);
+                camera.position.lerp(targetPos, 0.1);
+                camera.lookAt(0, 2, -5);
+            } else if (cameraMode === 1) {
+                const targetPos = new THREE.Vector3(car.position.x, 1.8, 0.5);
+                camera.position.lerp(targetPos, 0.2);
+                camera.lookAt(car.position.x, 1.5, -20);
+            } else if (cameraMode === 2) {
+                const targetPos = new THREE.Vector3(0, 25, 25);
+                camera.position.lerp(targetPos, 0.1);
+                camera.lookAt(0, 0, -60); 
+            }
+        }
+
+        function resizeConfetti() {
+            confCanvas.width = window.innerWidth;
+            confCanvas.height = window.innerHeight;
+        }
+
+        // DESIGN ORIGINAL CONSERVE : ROUTE
+        function createRoad() {
+            for(let i=0; i<25; i++) {
+                const segment = new THREE.Group();
+                const roadGeo = new THREE.BoxGeometry(16, 0.2, 10);
+                const roadMat = new THREE.MeshPhongMaterial({ color: 0x444444 });
+                const road = new THREE.Mesh(roadGeo, roadMat);
+                road.receiveShadow = true;
+                segment.add(road);
+
+                const lineGeo = new THREE.BoxGeometry(0.3, 0.25, 4);
+                const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                [-2.5, 2.5].forEach(lx => {
+                    const line = new THREE.Mesh(lineGeo, lineMat);
+                    line.receiveShadow = true;
+                    line.position.set(lx, 0.05, 0);
+                    segment.add(line);
+                });
+
+                const grassGeo = new THREE.BoxGeometry(100, 0.15, 10);
+                const grassMat = new THREE.MeshPhongMaterial({ color: 0x2d8a2d });
+                const grass = new THREE.Mesh(grassGeo, grassMat);
+                grass.receiveShadow = true;
+                grass.position.y = -0.1;
+                segment.add(grass);
+
+                segment.position.z = -i * 10;
+                scene.add(segment);
+                roadTiles.push(segment);
+            }
+        }
+
+        // DESIGN ORIGINAL CONSERVE : VOITURE F1
+        function createCar() {
+            const carGroup = new THREE.Group();
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+            
+            const cylinderGeo = new THREE.CylinderGeometry(0.7, 0.7, 2, 16);
+            const mainBody = new THREE.Mesh(cylinderGeo, bodyMat);
+            mainBody.rotation.x = Math.PI / 2;
+            mainBody.castShadow = true;
+            carGroup.add(mainBody);
+
+            const capGeo = new THREE.SphereGeometry(0.7, 16, 16);
+            const frontCap = new THREE.Mesh(capGeo, bodyMat);
+            frontCap.position.z = -1;
+            frontCap.castShadow = true;
+            carGroup.add(frontCap);
+
+            const backCap = new THREE.Mesh(capGeo, bodyMat);
+            backCap.position.z = 1;
+            backCap.castShadow = true;
+            carGroup.add(backCap);
+
+            const cockGeo = new THREE.SphereGeometry(0.5, 16, 16);
+            const cockMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+            const cock = new THREE.Mesh(cockGeo, cockMat);
+            cock.position.set(0, 0.5, 0);
+            cock.scale.set(1, 0.6, 1.5);
+            cock.castShadow = true;
+            carGroup.add(cock);
+
+            const wingGeo = new THREE.BoxGeometry(2.2, 0.2, 0.8);
+            const wing = new THREE.Mesh(wingGeo, bodyMat);
+            wing.position.set(0, 0.8, 1.3);
+            wing.castShadow = true;
+            carGroup.add(wing);
+
+            const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.6, 24);
+            const wheelMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+            const wheelsPos = [[1.1, -0.2, 1.2], [-1.1, -0.2, 1.2], [1, -0.2, -1.2], [-1, -0.2, -1.2]];
+            wheelsPos.forEach(pos => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.rotation.z = Math.PI/2;
+                w.position.set(...pos);
+                w.castShadow = true;
+                carGroup.add(w);
+            });
+
+            car = carGroup;
+            car.position.y = 0.8;
+            scene.add(car);
+        }
+
+        // DESIGN ORIGINAL CONSERVE : PARTICULES DE FUMEE
+        function createSmokeParticle(x, z) {
+            const geo = new THREE.SphereGeometry(Math.random() * 0.3 + 0.1, 8, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xeeeeee, transparent: true, opacity: 0.6 });
+            const p = new THREE.Mesh(geo, mat);
+            p.position.set(x + (Math.random() - 0.5), 0.2, z + (Math.random() - 0.5));
+            scene.add(p);
+            smokeParticles.push({
+                mesh: p,
+                life: 1.0,
+                vx: (Math.random() - 0.5) * 0.05,
+                vy: 0.02 + Math.random() * 0.03,
+                vz: 0.05 + Math.random() * 0.05
+            });
+        }
+
+        function updateSmoke() {
+            for (let i = smokeParticles.length - 1; i >= 0; i--) {
+                const p = smokeParticles[i];
+                p.life -= 0.02;
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    smokeParticles.splice(i, 1);
+                    continue;
+                }
+                p.mesh.position.x += p.vx;
+                p.mesh.position.y += p.vy;
+                p.mesh.position.z += p.vz;
+                p.mesh.scale.multiplyScalar(1.02);
+                p.mesh.material.opacity = p.life * 0.6;
+            }
+        }
+
+        // DESIGN ORIGINAL CONSERVE : NUAGES ET ARBRES
+        function createCloud(x, y, z) {
+            const cloudGroup = new THREE.Group();
+            const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            const spheresCount = 4 + Math.floor(Math.random() * 3);
+            for(let i=0; i<spheresCount; i++) {
+                const size = 2 + Math.random() * 3;
+                const geo = new THREE.SphereGeometry(size, 16, 16);
+                const sphere = new THREE.Mesh(geo, mat);
+                sphere.position.set(i * 2, Math.random() * 2, Math.random() * 2);
+                cloudGroup.add(sphere);
+            }
+            cloudGroup.position.set(x, y, z);
+            scene.add(cloudGroup);
+            clouds.push(cloudGroup);
+        }
+
+        function createTree(x, z) {
+            const treeGroup = new THREE.Group();
+            const trunkGeo = new THREE.CylinderGeometry(0.4, 0.6, 3, 12);
+            const trunkMat = new THREE.MeshPhongMaterial({ color: 0x5d4037 });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 1.5;
+            trunk.castShadow = true;
+            treeGroup.add(trunk);
+
+            const leafMat = new THREE.MeshPhongMaterial({ color: 0x2e7d32 });
+            const spheresCount = 3 + Math.floor(Math.random() * 2);
+            for(let i=0; i<spheresCount; i++) {
+                const size = 1.5 + Math.random() * 1.5;
+                const geo = new THREE.SphereGeometry(size, 16, 16);
+                const leaf = new THREE.Mesh(geo, leafMat);
+                leaf.position.set(Math.random() - 0.5, 3 + Math.random() * 2, Math.random() - 0.5);
+                leaf.castShadow = true;
+                treeGroup.add(leaf);
+            }
+            treeGroup.position.set(x, 0, z);
+            scene.add(treeGroup);
+            scenery.push(treeGroup);
+        }
+
+        async function nextTurn() {
+            if(!isPlaying) return;
+            if(questionCount >= maxQuestions) {
+                endGame();
+                return;
+            }
+            questionCount++;
+            document.getElementById('progress').innerText = `${questionCount} / ${maxQuestions}`;
+            
+            // On pioche un animal cible au hasard
+            currentTarget = getRandomVocabularyItem();
+            
+            document.getElementById('instruction').innerText = `LISTEN...`;
+            
+            lastSpokenText = `Drive to ${currentTarget.speech || currentTarget.en}`;
+            await speak(lastSpokenText);
+            
+            setTimeout(() => {
+                spawnAnimals();
+                document.getElementById('instruction').innerText = `TARGET: ?`;
+            }, 1000);
+        }
+
+        // LOGIQUE : APPARITION DES IMAGES D'ANIMAUX DEPUIS LE DOSSIER LOCAL
+        function spawnAnimals() {
+            const correctLane = Math.floor(Math.random() * 3);
+            const group = new THREE.Group();
+            
+            // Sélection de 2 animaux leurres différents de la cible
+            let others = vocabulary.filter(a => a.id !== currentTarget.id);
+            others = others.sort(() => 0.5 - Math.random()).slice(0, 2);
+            let otherIdx = 0;
+
+            for(let i=0; i<3; i++) {
+                const choice = (i === correctLane) ? currentTarget : others[otherIdx++];
+                
+                const boxGeo = new THREE.BoxGeometry(3, 3, 0.3);
+                const defaultMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+                
+                // Utilisation de MeshBasicMaterial pour garantir que l'image soit visible même sans lumière directe
+                const frontMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true });
+                
+                // Chargement direct du fichier local (assurez-vous qu'il soit dans le même dossier)
+                textureLoader.load(
+                    choice.image || `${choice.id}.png`,
+                    // Succès : l'image s'affiche
+                    function(texture) {
+                        frontMat.map = texture;
+                        frontMat.needsUpdate = true;
+                    },
+                    undefined,
+                    // Erreur : l'image est bloquée (Erreur CORS locale ou fichier manquant)
+                    function(err) {
+                        console.warn(`Impossible de charger ${choice.id}.png. Affichage du texte de secours.`);
+                        // On crée une texture avec du texte pour remplacer l'image !
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 256; canvas.height = 256;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#ffffff'; 
+                        ctx.fillRect(0, 0, 256, 256);
+                        ctx.fillStyle = '#222222'; 
+                        ctx.font = 'bold 45px Arial'; 
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText((choice.en || choice.id || '').toUpperCase(), 128, 128);
+                        
+                        frontMat.map = new THREE.CanvasTexture(canvas);
+                        frontMat.needsUpdate = true;
+                    }
+                );
+                
+                // Matériaux: [right, left, top, bottom, front, back]
+                const materials = [defaultMat, defaultMat, defaultMat, defaultMat, frontMat, defaultMat];
+                
+                const box = new THREE.Mesh(boxGeo, materials);
+                box.position.x = lanes[i];
+                box.position.y = 2.5; 
+                box.castShadow = true;
+                
+                // On enregistre l'id pour vérifier la collision
+                box.userData = { id: choice.id };
+                group.add(box);
+            }
+            group.position.z = -150; 
+            scene.add(group);
+            objects.push(group);
+        }
+
+        // VOCAL GEMINI
+        async function speak(text) {
+            return new Promise(async (resolve) => {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: `Say with energy: ${text}` }] }],
+                            generationConfig: {
+                                responseModalities: ["AUDIO"],
+                                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+                            }
+                        })
+                    });
+                    const data = await response.json();
+                    const audioBase64 = data.candidates[0].content.parts[0].inlineData.data;
+                    playPCM(audioBase64, resolve);
+                } catch (e) {
+                    const msg = new SpeechSynthesisUtterance(text);
+                    msg.lang = 'en-US';
+                    msg.onend = () => resolve();
+                    window.speechSynthesis.speak(msg);
+                }
+            });
+        }
+
+        function playPCM(base64, callback) {
+            const binary = atob(base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+            const sampleRate = 24000;
+            view.setUint32(0, 0x52494646, false); view.setUint32(4, 36 + binary.length, true); view.setUint32(8, 0x57415645, false);
+            view.setUint32(12, 0x666d7420, false); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true); view.setUint16(34, 16, true); view.setUint32(36, 0x64617461, false); view.setUint32(40, binary.length, true);
+            const audio = new Audio(URL.createObjectURL(new Blob([wavHeader, bytes], { type: 'audio/wav' })));
+            audio.onended = () => callback();
+            audio.play();
+        }
+
+        function showFeedback(text, color, imageUrl) {
+            const el = document.getElementById('message');
+            const textEl = document.getElementById('message-text');
+            const imgEl = document.getElementById('message-image');
+
+            textEl.innerText = text;
+            textEl.style.color = color;
+
+            if (imageUrl) {
+                imgEl.src = imageUrl;
+                imgEl.style.display = 'block';
+            } else {
+                imgEl.style.display = 'none';
+                imgEl.src = '';
+            }
+
+            el.style.opacity = '1';
+            setTimeout(() => el.style.opacity = '0', 1500);
+        }
+
+        function endGame() {
+            isPlaying = false;
+            const endScreen = document.getElementById('end-screen');
+            const visual = document.getElementById('end-visuals');
+            const scoreText = document.getElementById('end-score');
+            const title = document.getElementById('end-title');
+            
+            endScreen.style.display = 'flex';
+            scoreText.innerText = `YOU GOT ${correctAnswers} / ${maxQuestions}`;
+            visual.innerHTML = '';
+
+            if (correctAnswers === 10) {
+                title.innerText = "GRAND PRIX WINNER!";
+                visual.innerHTML = '<div class="trophy">🏆</div>';
+                startFireworks();
+            } else {
+                title.innerText = "WELL DONE!";
+                let stars = (correctAnswers >= 9) ? 3 : (correctAnswers >= 6) ? 2 : 1;
+                for(let i=0; i<stars; i++) {
+                    const s = document.createElement('span');
+                    s.className = 'star';
+                    s.innerText = '⭐';
+                    s.style.animationDelay = `${i * 0.3}s`;
+                    visual.appendChild(s);
+                }
+            }
+        }
+
+        function startFireworks() {
+            for(let i=0; i<100; i++) {
+                confettis.push({
+                    x: Math.random() * window.innerWidth,
+                    y: Math.random() * window.innerHeight - window.innerHeight,
+                    r: 4 + Math.random() * 6,
+                    color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+                    vy: 2 + Math.random() * 4,
+                    vx: Math.random() * 2 - 1,
+                    rotation: Math.random() * Math.PI
+                });
+            }
+        }
+
+        function drawConfetti() {
+            confCtx.clearRect(0,0,confCanvas.width, confCanvas.height);
+            confettis.forEach((c, i) => {
+                c.y += c.vy;
+                c.x += c.vx;
+                c.rotation += 0.1;
+                if(c.y > confCanvas.height) c.y = -10;
+                
+                confCtx.save();
+                confCtx.translate(c.x, c.y);
+                confCtx.rotate(c.rotation);
+                confCtx.fillStyle = c.color;
+                confCtx.fillRect(-c.r/2, -c.r/2, c.r, c.r);
+                confCtx.restore();
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            drawConfetti();
+            updateCameraPosition();
+            updateSmoke();
+            
+            if(isPlaying) {
+                roadTiles.forEach(tile => {
+                    tile.position.z += gameSpeed;
+                    if(tile.position.z > 20) tile.position.z -= 250;
+                });
+                clouds.forEach(cloud => {
+                    cloud.position.z += gameSpeed * 0.3;
+                    if(cloud.position.z > 30) cloud.position.z = -150;
+                });
+                scenery.forEach(tree => {
+                    tree.position.z += gameSpeed;
+                    if(tree.position.z > 20) {
+                        tree.position.z = -200;
+                        tree.position.x = Math.random() > 0.5 ? 12 + Math.random()*5 : -12 - Math.random()*5;
+                    }
+                });
+
+                // Détection du déplacement latéral pour la fumée
+                const diffX = Math.abs(car.position.x - targetLaneX);
+                if (diffX > 0.1) {
+                    createSmokeParticle(car.position.x + 1, car.position.z + 1.2);
+                    createSmokeParticle(car.position.x - 1, car.position.z + 1.2);
+                }
+
+                car.position.x = THREE.MathUtils.lerp(car.position.x, targetLaneX, 0.12);
+                car.rotation.z = -(car.position.x - targetLaneX) * 0.15;
+                car.rotation.y = (car.position.x - targetLaneX) * 0.08;
+
+                // Logique de collision modifiée pour les animaux
+                objects.forEach((group, index) => {
+                    group.position.z += gameSpeed;
+                    if(group.position.z > -3 && group.position.z < 0) {
+                        const hitObject = group.children[currentLane];
+                        // On compare l'id de l'objet touché avec l'id de la cible demandée
+                        if(hitObject.userData.id === currentTarget.id) {
+                            correctAnswers++;
+                            showFeedback("EXCELLENT!", "#facc15");
+                        } else {
+                            showFeedback("OOPS!", "#ef4444", currentTarget.image || `${currentTarget.id}.png`);
+                        }
+                        scene.remove(group);
+                        objects.splice(index, 1);
+                        setTimeout(nextTurn, 1500);
+                    } else if (group.position.z > 10) {
+                        scene.remove(group);
+                        objects.splice(index, 1);
+                        nextTurn();
+                    }
+                });
+            }
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if(!isPlaying) return;
+            if(e.key === 'ArrowLeft' && currentLane > 0) currentLane--;
+            else if(e.key === 'ArrowRight' && currentLane < 2) currentLane++;
+            targetLaneX = lanes[currentLane];
+        });
+
+        // FonctionstartGame modifiée pour ne lancer qu'un seul niveau par défaut
+        function startGame() {
+            if (vocabulary.length < 3) {
+                alert('Il faut au moins 3 mots dans ce thème pour jouer à ce jeu.');
+                return;
+            }
+
+            questionCount = 0;
+            correctAnswers = 0;
+            confettis = [];
+            smokeParticles.forEach(p => scene.remove(p.mesh));
+            smokeParticles = [];
+            document.getElementById('progress').innerText = `0 / ${maxQuestions}`;
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('end-screen').style.display = 'none';
+            isPlaying = true;
+            objects.forEach(o => scene.remove(o));
+            objects = [];
+            nextTurn();
+        }
+
+        window.onload = () => {
+            loadThemeData();
+            init();
+        };
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / (window.innerHeight - 60);
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight - 60);
+            resizeConfetti();
+        });
+    </script>
+</body>
+</html>

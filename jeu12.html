@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <!-- Mode "mots" : si un mot n'a pas d'image (partie enseignant), on affiche le mot écrit en anglais -->
+    <script>
+    (function () {
+        function escapeXml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function wrapLines(text) {
+            var words = text.split(/\s+/).filter(Boolean);
+            if (words.length <= 1) return words.length ? words : [''];
+            var lines = [], cur = '';
+            words.forEach(function (w) {
+                if (cur && (cur + ' ' + w).length > 12) { lines.push(cur); cur = w; }
+                else { cur = cur ? cur + ' ' + w : w; }
+            });
+            if (cur) lines.push(cur);
+            return lines.slice(0, 4);
+        }
+        // Génère une "image" (SVG en data-URI) contenant le mot anglais écrit
+        window.makeWordCardImage = function (text) {
+            var lines = wrapLines(String(text || '').trim());
+            var longest = Math.max.apply(null, lines.map(function (l) { return l.length; }).concat([1]));
+            var size = Math.max(34, Math.min(120, Math.floor(340 / (longest * 0.58))));
+            var lineH = size * 1.15;
+            var startY = 200 - ((lines.length - 1) * lineH) / 2;
+            var tspans = lines.map(function (l, i) {
+                return '<text x="200" y="' + (startY + i * lineH) + '" text-anchor="middle" dominant-baseline="central" ' +
+                    'font-family="Segoe UI, Tahoma, Arial, sans-serif" font-weight="800" font-size="' + size + '" fill="#1e293b">' +
+                    escapeXml(l) + '</text>';
+            }).join('');
+            var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">' +
+                '<rect x="8" y="8" width="384" height="384" rx="48" fill="#ffffff" stroke="#fdba74" stroke-width="10"/>' +
+                tspans + '</svg>';
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        };
+        function hasImage(w) {
+            return [w.image, w.img, w.picture, w.src].some(function (v) { return typeof v === 'string' && v.trim() !== ''; });
+        }
+        // Applique le mode "mots" à tous les thèmes enregistrés (sans modifier le stockage)
+        window.withTextFallback = function (themes) {
+            if (!Array.isArray(themes)) return themes;
+            themes.forEach(function (t) {
+                if (!t || !Array.isArray(t.words)) return;
+                t.words.forEach(function (w) {
+                    if (w && !hasImage(w)) {
+                        var label = w.en || w.speech || w.fr || '';
+                        if (label) w.image = window.makeWordCardImage(label);
+                    }
+                });
+            });
+            return themes;
+        };
+    })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Vocal Challenge - Oral CE1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap');
+        
+        body {
+            font-family: 'Fredoka', sans-serif;
+            background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-x: hidden;
+            padding-top: 64px;
+            box-sizing: border-box;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 2rem;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        }
+
+        .voice-active {
+            animation: pulse-border 1.5s infinite;
+        }
+
+        @keyframes pulse-border {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+            70% { box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        .animal-img {
+            max-height: 200px;
+            transition: transform 0.3s ease;
+        }
+
+        .animal-img:hover {
+            transform: scale(1.05);
+        }
+
+        /* Bouton Quitter : retour vers index.html, directement sur le thème en cours */
+        #quit-btn { position: fixed; top: 14px; left: 14px; z-index: 1000; background: rgba(0,0,0,.75); color: white; border: 2px solid white; border-radius: 10px; padding: 9px 14px; font-weight: 800; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,.35); font-family: 'Fredoka', sans-serif; }
+        #quit-btn:hover { background: rgba(0,0,0,.9); }
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- En-tete standard VOCABPLAY -->
+    <header class="fixed top-0 left-0 right-0 z-[1000] bg-white shadow-md p-3 md:p-4 flex justify-between items-center border-t-4 border-[#012169]">
+<button onclick="goBack()" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 text-xs sm:text-sm md:text-base flex items-center gap-2">
+            🏠 Menu Principal
+        </button>
+    </header>
+
+    <!-- Écran de démarrage -->
+    <div id="start-screen" class="glass-card p-10 text-center max-w-md w-full border-4 border-white/50">
+        <div class="text-8xl mb-6">🎤</div>
+        <h1 class="text-4xl font-bold text-green-700 mb-2 italic">The Vocal Challenge</h1>
+        <p id="start-theme-name" class="text-gray-500 font-bold mb-2 text-lg">Thème</p>
+        <p class="text-gray-600 mb-8 text-xl font-medium">Es-tu prêt à nommer les images en anglais ?</p>
+        <button onclick="startGame()" class="bg-gradient-to-r from-green-500 to-emerald-600 hover:scale-105 transform text-white font-bold py-4 px-10 rounded-2xl w-full text-2xl shadow-xl transition-all">
+            START! 🚀
+        </button>
+    </div>
+
+    <!-- Interface du jeu -->
+    <div id="game-screen" class="hidden w-full max-w-md">
+        <div class="glass-card p-8 text-center relative border-4 border-white/50">
+            
+            <div class="flex justify-between items-center mb-6">
+                <div class="bg-yellow-100 text-yellow-700 px-4 py-2 rounded-full font-bold shadow-sm flex items-center gap-2">
+                    <span>Score:</span> <span id="score">0</span> ⭐
+                </div>
+                <div class="bg-blue-100 text-blue-700 px-4 py-2 rounded-full font-bold shadow-sm">
+                    <span id="question-count">1</span> / <span id="question-total">8</span>
+                </div>
+            </div>
+
+            <!-- Zone image -->
+            <div id="animal-display" class="bg-white rounded-3xl p-6 mb-6 shadow-inner border-2 border-gray-100 min-h-[250px] flex flex-col items-center justify-center">
+                <img id="animal-target" src="" alt="Animal" class="animal-img object-contain mb-4">
+                <div id="status-label" class="text-2xl font-bold text-gray-800">What is this?</div>
+            </div>
+
+            <!-- Feedback Bulle -->
+            <div id="heard-bubble" class="hidden mb-6 p-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 text-lg italic text-gray-500">
+                "..."
+            </div>
+
+            <!-- Boutons de contrôle -->
+            <div id="controls-normal" class="flex flex-col items-center gap-4">
+                <button id="mic-btn" onclick="startListening()" class="bg-red-500 hover:bg-red-600 text-white p-8 rounded-full shadow-lg transition-all transform active:scale-95">
+                    <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 005.93 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-2.93v-2.07z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+                <p class="text-sm font-semibold text-gray-400 uppercase tracking-widest">Appuie et parle</p>
+            </div>
+
+            <!-- Boutons d'erreur (masqués par défaut) -->
+            <div id="controls-error" class="hidden flex flex-col gap-3">
+                <button onclick="retryListening()" class="bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 px-6 rounded-xl text-lg shadow-md transition-all">
+                    Retry! 🔁
+                </button>
+                <button onclick="revealAnswer()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-xl text-lg shadow-md transition-all">
+                    Listen to answer 🔊
+                </button>
+            </div>
+
+            <!-- Bouton Suivant (masqué par défaut) -->
+            <button id="next-btn" onclick="nextQuestion()" class="hidden bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-10 rounded-2xl w-full text-xl shadow-lg mt-4 animate-bounce">
+                Next Word ➡️
+            </button>
+        </div>
+    </div>
+
+    <!-- Écran de fin -->
+    <div id="end-screen" class="hidden glass-card p-10 text-center max-w-md w-full border-4 border-white/50">
+        <div id="trophy" class="text-8xl mb-4">🏆</div>
+        <h2 class="text-4xl font-bold mb-2 text-gray-800" id="end-title">Finish!</h2>
+        <p id="final-result" class="text-2xl font-bold text-green-600 mb-6"></p>
+        <div id="rank-message" class="mb-8 p-5 bg-green-50 rounded-2xl text-green-800 font-semibold text-lg border border-green-100"></div>
+        <button onclick="location.reload()" class="bg-blue-600 text-white font-bold py-4 px-10 rounded-2xl w-full text-2xl shadow-lg hover:bg-blue-700 transition-all">
+            Play Again! 🔄
+        </button>
+    </div>
+
+    <script>
+        // ==========================================
+        // THÈME DE VOCABULAIRE (lié à index.html)
+        // ==========================================
+        let currentTheme = null;
+        let gameAnimals = [];
+
+        function loadThemeData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const themeId = urlParams.get('themeId');
+            const savedThemes = withTextFallback(JSON.parse(localStorage.getItem('app_vocab_themes')) || []);
+
+            if (themeId) currentTheme = savedThemes.find(t => t.id === themeId);
+
+            // Fallback si aucun thème n'est trouvé (mode démo)
+            if (!currentTheme) {
+                currentTheme = {
+                    name: "Weather",
+                    words: [
+                        { id: 'sunny', en: "It's sunny", speech: "It's sunny", image: 'sunny.png' },
+                        { id: 'cloudy', en: "It's cloudy", speech: "It's cloudy", image: 'cloudy.png' },
+                        { id: 'foggy', en: "It's foggy", speech: "It's foggy", image: 'foggy.png' },
+                        { id: 'raining', en: "It's raining", speech: "It's raining", image: 'raining.png' },
+                        { id: 'snowing', en: "It's snowing", speech: "It's snowing", image: 'snowing.png' },
+                        { id: 'stormy', en: "It's stormy", speech: "It's stormy", image: 'stormy.png' },
+                        { id: 'windy', en: "It's windy", speech: "It's windy", image: 'windy.png' }
+                    ]
+                };
+            }
+
+            let rawWords = Array.isArray(currentTheme.words) ? currentTheme.words : [];
+
+            // Application des filtres enseignant (mots sélectionnés)
+            if (Array.isArray(currentTheme.selectedWordIds) && currentTheme.selectedWordIds.length > 0) {
+                rawWords = rawWords.filter(w => currentTheme.selectedWordIds.includes(w.id));
+            } else if (Array.isArray(currentTheme.selectedWords) && typeof currentTheme.selectedWords[0] === 'string') {
+                rawWords = rawWords.filter(w => currentTheme.selectedWords.includes(w.id));
+            } else {
+                const hasFlags = rawWords.some(w => w.selected !== undefined || w.active !== undefined);
+                if (hasFlags) rawWords = rawWords.filter(w => w.selected !== false && w.active !== false);
+            }
+
+            return rawWords.map(word => ({
+                name: word.en || word.speech || word.target || word.word || word.fr || '',
+                file: word.image || word.img || word.picture || word.src || ''
+            })).filter(w => w.name);
+        }
+
+        function goBack() {
+            window.speechSynthesis.cancel();
+            releaseMicStream();
+            const themeId = (currentTheme && currentTheme.id) ? `?themeId=${currentTheme.id}` : '';
+            window.location.href = `index.html${themeId}`;
+        }
+
+        let score = 0;
+        let currentIndex = 0;
+        let targetAnimal = null;
+        let isListening = false;      // Vrai quand on attend activement une réponse de l'élève
+        let recognitionRunning = false; // Vrai quand le moteur de reconnaissance tourne réellement
+        let gameIsActive = false;       // Vrai tant que la partie n'est pas terminée/quittée
+        let micStream = null; // Flux micro conservé actif pour éviter de redemander l'autorisation
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition = null;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+            recognition.continuous = true; // Reste actif en continu : on ne rappelle plus .start() à chaque question
+
+            recognition.onresult = (event) => {
+                // On ignore tout résultat si l'élève n'a pas explicitement appuyé sur le micro
+                if (!isListening) return;
+                const last = event.results[event.results.length - 1];
+                const speechResult = last[0].transcript.toLowerCase().trim();
+                handleVoiceInput(speechResult);
+            };
+
+            recognition.onspeechend = () => stopMicUI();
+
+            recognition.onerror = (event) => {
+                stopMicUI();
+                // "no-speech" et "aborted" ne sont pas de vraies erreurs bloquantes : on relance juste le moteur
+                if (event.error !== 'no-speech' && event.error !== 'aborted' && isListening) {
+                    handleVoiceInput("");
+                }
+            };
+
+            // Le moteur peut s'arrêter tout seul (silence prolongé, limite navigateur...).
+            // On le relance automatiquement et silencieusement tant que la partie est active,
+            // pour ne JAMAIS redemander l'autorisation en cours de partie.
+            recognition.onend = () => {
+                recognitionRunning = false;
+                if (gameIsActive) restartRecognitionSilently();
+            };
+        }
+
+        function restartRecognitionSilently() {
+            if (!recognition || recognitionRunning) return;
+            try {
+                recognition.start();
+                recognitionRunning = true;
+            } catch (e) {
+                // Déjà démarré ou navigateur temporairement indisponible : on réessaie un peu plus tard
+                setTimeout(() => { if (gameIsActive) restartRecognitionSilently(); }, 300);
+            }
+        }
+
+        // Demande l'autorisation micro une seule fois et garde le flux ouvert.
+        async function ensureMicPermission() {
+            if (micStream) return true;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return true; // Pas bloquant si l'API n'est pas dispo
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                return true;
+            } catch (err) {
+                console.error('Accès au microphone refusé :', err);
+                return false;
+            }
+        }
+
+        function releaseMicStream() {
+            gameIsActive = false;
+            if (recognition) { try { recognition.stop(); } catch(e) {} }
+            recognitionRunning = false;
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
+        }
+
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.lang = 'en-US';
+            msg.rate = 0.9;
+            window.speechSynthesis.speak(msg);
+        }
+
+        async function startGame() {
+            const vocabulary = loadThemeData();
+            if (vocabulary.length < 2) {
+                alert("Il faut au moins 2 mots configurés dans ce thème pour jouer.");
+                return;
+            }
+
+            const micOk = await ensureMicPermission();
+            if (!micOk) {
+                alert("Le microphone est nécessaire pour jouer à ce jeu. Merci d'autoriser l'accès au micro dans votre navigateur, puis de réessayer.");
+                return;
+            }
+
+            // Mélanger les mots au début pour que chacun soit montré une fois aléatoirement
+            gameAnimals = [...vocabulary].sort(() => Math.random() - 0.5);
+            score = 0;
+            currentIndex = 0;
+            document.getElementById('score').innerText = score;
+            document.getElementById('question-total').innerText = gameAnimals.length;
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+
+            // Un seul démarrage du moteur de reconnaissance pour toute la partie
+            gameIsActive = true;
+            restartRecognitionSilently();
+
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentIndex >= gameAnimals.length) {
+                endGame();
+                return;
+            }
+
+            targetAnimal = gameAnimals[currentIndex];
+            
+            document.getElementById('question-count').innerText = (currentIndex + 1);
+            document.getElementById('animal-target').src = targetAnimal.file;
+            document.getElementById('status-label').innerText = "What is this?";
+            document.getElementById('status-label').className = "text-2xl font-bold text-gray-800";
+            document.getElementById('heard-bubble').classList.add('hidden');
+            
+            document.getElementById('controls-normal').classList.remove('hidden');
+            document.getElementById('controls-error').classList.add('hidden');
+            document.getElementById('next-btn').classList.add('hidden');
+            document.getElementById('mic-btn').disabled = false;
+        }
+
+        function startListening() {
+            if (isListening) return;
+            // Le moteur tourne déjà en continu depuis le début de la partie :
+            // on se contente d'activer l'écoute logique, sans jamais rappeler .start().
+            isListening = true;
+            if (!recognitionRunning) restartRecognitionSilently();
+            document.getElementById('mic-btn').classList.add('voice-active');
+            document.getElementById('status-label').innerText = "I'm listening...";
+        }
+
+        function stopMicUI() {
+            isListening = false;
+            document.getElementById('mic-btn').classList.remove('voice-active');
+        }
+
+        function handleVoiceInput(result) {
+            isListening = false;
+            document.getElementById('mic-btn').classList.remove('voice-active');
+
+            const statusLabel = document.getElementById('status-label');
+            const heardBubble = document.getElementById('heard-bubble');
+            
+            heardBubble.innerText = result ? `I heard: "${result}"` : "I didn't hear anything...";
+            heardBubble.classList.remove('hidden');
+
+            const isCorrect = result.toLowerCase().includes(targetAnimal.name.toLowerCase());
+
+            if (isCorrect) {
+                score++;
+                document.getElementById('score').innerText = score;
+                statusLabel.innerText = "Yes! Well done! ✅";
+                statusLabel.classList.add('text-green-600');
+                
+                confetti({
+                    particleCount: 100,
+                    spread: 70,
+                    origin: { y: 0.6 }
+                });
+
+                speak(`Yes! It is a ${targetAnimal.name}`);
+                
+                document.getElementById('controls-normal').classList.add('hidden');
+                document.getElementById('next-btn').classList.remove('hidden');
+            } else {
+                statusLabel.innerText = "Not quite... ❌";
+                statusLabel.classList.add('text-red-500');
+                
+                document.getElementById('controls-normal').classList.add('hidden');
+                document.getElementById('controls-error').classList.remove('hidden');
+            }
+        }
+
+        function retryListening() {
+            document.getElementById('controls-error').classList.add('hidden');
+            document.getElementById('controls-normal').classList.remove('hidden');
+            document.getElementById('status-label').innerText = "Try again!";
+            document.getElementById('status-label').className = "text-2xl font-bold text-gray-800";
+            document.getElementById('heard-bubble').classList.add('hidden');
+        }
+
+        function revealAnswer() {
+            speak(`The answer is: ${targetAnimal.name}`);
+            document.getElementById('status-label').innerText = `It's a ${targetAnimal.name}`;
+            document.getElementById('status-label').className = "text-2xl font-bold text-blue-600";
+            
+            document.getElementById('controls-error').classList.add('hidden');
+            document.getElementById('next-btn').classList.remove('hidden');
+        }
+
+        function nextQuestion() {
+            currentIndex++;
+            loadQuestion();
+        }
+
+        function endGame() {
+            releaseMicStream();
+            document.getElementById('game-screen').classList.add('hidden');
+            document.getElementById('end-screen').classList.remove('hidden');
+            const total = gameAnimals.length;
+            document.getElementById('final-result').innerText = `Tu as obtenu ${score} / ${total} étoiles ! ⭐`;
+            
+            let rank = "";
+            let trophy = "🦁";
+            let title = "Bravo !";
+
+            if (score === total) { 
+                title = "Perfect! 🏆";
+                rank = "Tu es un véritable expert du vocabulaire !"; 
+                trophy = "🥇"; 
+            } else if (score >= total / 2) { 
+                title = "Very Good! 🌟";
+                rank = "Tu connais bien ton vocabulaire anglais !"; 
+                trophy = "🥈"; 
+            } else { 
+                title = "Keep going! 💪";
+                rank = "Continue de t'entraîner pour tous les retenir !"; 
+                trophy = "🥉"; 
+            }
+            
+            document.getElementById('end-title').innerText = title;
+            document.getElementById('rank-message').innerText = rank;
+            document.getElementById('trophy').innerText = trophy;
+
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.5 }
+            });
+        }
+
+        // Aperçu du thème dès le chargement de la page (avant de cliquer sur START)
+        window.addEventListener('load', () => {
+            loadThemeData();
+            document.title = `${currentTheme.name} - The Vocal Challenge`;
+            document.getElementById('start-theme-name').innerText = currentTheme.name;
+        });
+    </script>
+</body>
+</html>

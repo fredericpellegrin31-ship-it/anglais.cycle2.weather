@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <!-- Mode "mots" : si un mot n'a pas d'image (partie enseignant), on affiche le mot écrit en anglais -->
+    <script>
+    (function () {
+        function escapeXml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function wrapLines(text) {
+            var words = text.split(/\s+/).filter(Boolean);
+            if (words.length <= 1) return words.length ? words : [''];
+            var lines = [], cur = '';
+            words.forEach(function (w) {
+                if (cur && (cur + ' ' + w).length > 12) { lines.push(cur); cur = w; }
+                else { cur = cur ? cur + ' ' + w : w; }
+            });
+            if (cur) lines.push(cur);
+            return lines.slice(0, 4);
+        }
+        // Génère une "image" (SVG en data-URI) contenant le mot anglais écrit
+        window.makeWordCardImage = function (text) {
+            var lines = wrapLines(String(text || '').trim());
+            var longest = Math.max.apply(null, lines.map(function (l) { return l.length; }).concat([1]));
+            var size = Math.max(34, Math.min(120, Math.floor(340 / (longest * 0.58))));
+            var lineH = size * 1.15;
+            var startY = 200 - ((lines.length - 1) * lineH) / 2;
+            var tspans = lines.map(function (l, i) {
+                return '<text x="200" y="' + (startY + i * lineH) + '" text-anchor="middle" dominant-baseline="central" ' +
+                    'font-family="Segoe UI, Tahoma, Arial, sans-serif" font-weight="800" font-size="' + size + '" fill="#1e293b">' +
+                    escapeXml(l) + '</text>';
+            }).join('');
+            var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">' +
+                '<rect x="8" y="8" width="384" height="384" rx="48" fill="#ffffff" stroke="#fdba74" stroke-width="10"/>' +
+                tspans + '</svg>';
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        };
+        function hasImage(w) {
+            return [w.image, w.img, w.picture, w.src].some(function (v) { return typeof v === 'string' && v.trim() !== ''; });
+        }
+        // Applique le mode "mots" à tous les thèmes enregistrés (sans modifier le stockage)
+        window.withTextFallback = function (themes) {
+            if (!Array.isArray(themes)) return themes;
+            themes.forEach(function (t) {
+                if (!t || !Array.isArray(t.words)) return;
+                t.words.forEach(function (w) {
+                    if (w && !hasImage(w)) {
+                        var label = w.en || w.speech || w.fr || '';
+                        if (label) w.image = window.makeWordCardImage(label);
+                    }
+                });
+            });
+            return themes;
+        };
+    })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Imagier Interactif</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Animations du fond avec émoticônes flottantes */
+        .floating-emoji {
+            position: fixed;
+            user-select: none;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.18;
+            animation: floatAnimation 12s infinite ease-in-out;
+        }
+
+        @keyframes floatAnimation {
+            0% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-30px) rotate(15deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+
+        /* Animations des cartes de vocabulaire */
+        .vocab-card {
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .vocab-card:hover {
+            transform: translateY(-8px) scale(1.03);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .vocab-card:active {
+            transform: scale(0.96);
+        }
+
+        /* Pulse lors de la prononciation */
+        .speaking {
+            animation: pulse-ring 1s infinite;
+            border-color: #f97316 !important;
+        }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5); }
+            70% { box-shadow: 0 0 0 15px rgba(249, 115, 22, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+        }
+
+        /* ===== Impression des flashcards ===== */
+        #print-area { display: none; }
+        @media print {
+            html, body { background: #fff !important; min-height: 0 !important; overflow: visible !important; }
+            body > *:not(#print-area) { display: none !important; }
+            #print-area { display: block !important; }
+            #print-area, #print-area * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            #print-area .pa-page { break-after: page; page-break-after: always; box-sizing: border-box; padding-top: 0.3mm; }
+            #print-area .pa-page:last-child { break-after: auto; page-break-after: auto; }
+
+            /* Petites flashcards : A4 paysage, 8 cartes de 32,5 mm par ligne, 6 lignes = 48 cartes par page */
+            #print-area.pa-small .pa-page { width: 261mm; margin: 0 auto; }
+            #print-area.pa-small .pa-grid { display: grid; grid-template-columns: repeat(8, 32.5mm); grid-auto-rows: 32.5mm; padding-left: 0.3mm; }
+            #print-area.pa-small .pa-card { border: 0.2mm solid #000; margin: -0.2mm 0 0 -0.2mm; box-sizing: border-box; padding: 1.5mm; background: #fff; display: flex; align-items: center; justify-content: center; }
+
+            /* Grandes flashcards : A4 portrait, 2 cartes par page */
+            #print-area.pa-large .pa-page { width: 192mm; margin: 0 auto; }
+            #print-area.pa-large .pa-card { width: 192mm; height: 138mm; border: 0.25mm solid #000; box-sizing: border-box; padding: 6mm; background: #fff; display: flex; align-items: center; justify-content: center; }
+            #print-area.pa-large .pa-card + .pa-card { margin-top: -0.25mm; }
+
+            #print-area img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        }
+    </style>
+</head>
+<body class="relative text-slate-800 flex flex-col justify-between min-h-screen">
+
+    <!-- ÉMOTICÔNES EN FOND D'ÉCRAN (INJECTÉES EN JS) -->
+    <div id="bg-emojis-container"></div>
+
+    <!-- En-tête standard VOCABPLAY -->
+    <header id="vp-header" class="sticky top-0 left-0 right-0 z-[100] bg-white shadow-md w-full px-3 md:px-4 flex justify-between items-center border-t-4 border-[#012169]" style="height:60px;">
+<button onclick="goBack()" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 text-xs sm:text-sm md:text-base flex items-center gap-2">
+            🏠 Menu Principal
+        </button>
+    </header>
+
+    <!-- BARRE D'OUTILS : thème, impression, vitesse -->
+    <div class="relative z-10 max-w-6xl mx-auto w-full px-6 pt-5 flex flex-wrap justify-between items-center gap-4">
+            <!-- Titre Dynamique du Thème -->
+            <div class="text-center flex-1">
+                <span class="text-xs uppercase tracking-widest text-orange-500 font-extrabold">Imagier Interactif</span>
+                <h1 id="theme-title" class="text-2xl sm:text-3xl font-black text-slate-800">Thème</h1>
+            </div>
+
+            <!-- Impression des flashcards -->
+            <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                <span class="text-xs font-bold text-slate-500 pl-2 hidden sm:inline">Imprimer :</span>
+                <button onclick="printFlashcards('small')" title="Imprimer des petites flashcards (A4 paysage, 8 par ligne)" class="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg font-bold bg-white text-slate-700 shadow-sm border border-slate-200 hover:bg-orange-500 hover:text-white hover:border-orange-500 transition-colors">
+                    <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                        <rect x="1" y="1" width="4.5" height="6" rx="0.5"/><rect x="6.5" y="1" width="4.5" height="6" rx="0.5"/><rect x="12" y="1" width="4.5" height="6" rx="0.5"/><rect x="17.5" y="1" width="3.5" height="6" rx="0.5"/>
+                        <rect x="1" y="9" width="4.5" height="6" rx="0.5"/><rect x="6.5" y="9" width="4.5" height="6" rx="0.5"/><rect x="12" y="9" width="4.5" height="6" rx="0.5"/><rect x="17.5" y="9" width="3.5" height="6" rx="0.5"/>
+                    </svg>
+                    <span class="hidden md:inline">Petites flashcards</span>
+                </button>
+                <button onclick="printFlashcards('large')" title="Imprimer de grandes flashcards (A4 portrait, 2 par page)" class="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg font-bold bg-white text-slate-700 shadow-sm border border-slate-200 hover:bg-orange-500 hover:text-white hover:border-orange-500 transition-colors">
+                    <svg width="16" height="20" viewBox="0 0 16 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                        <rect x="1" y="1" width="14" height="8" rx="0.8"/><rect x="1" y="11" width="14" height="8" rx="0.8"/>
+                    </svg>
+                    <span class="hidden md:inline">Grandes flashcards</span>
+                </button>
+            </div>
+
+            <!-- Bouton d'Aide Prononciation / Vitesse -->
+            <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                <span class="text-xs font-bold text-slate-500 pl-2 hidden sm:inline">Vitesse :</span>
+                <button onclick="setSpeechRate(0.8)" id="rate-slow" class="px-2.5 py-1 text-xs rounded-lg font-bold bg-orange-500 text-white shadow-sm">Lente</button>
+                <button onclick="setSpeechRate(1.0)" id="rate-normal" class="px-2.5 py-1 text-xs rounded-lg font-bold bg-white text-slate-700 shadow-sm border border-slate-200">Normale</button>
+            </div>
+    </div>
+
+    <!-- CONTENU PRINCIPAL / GRILLE DE VOCABULAIRE -->
+    <main class="relative z-10 max-w-6xl mx-auto p-6 flex-1 w-full flex flex-col justify-center">
+        
+        <!-- Instruction pour l'élève -->
+        <p class="text-center text-slate-600 font-medium mb-8 text-lg bg-white/60 py-2 px-6 rounded-full w-fit mx-auto backdrop-blur-sm shadow-sm border border-white/80">
+            👉 Clique sur une image pour écouter le mot !
+        </p>
+
+        <!-- Grille des cartes -->
+        <div id="words-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            <!-- Les cartes de mots seront injectées ici par JS -->
+        </div>
+
+    </main>
+
+    <!-- PIED DE PAGE -->
+    <footer class="relative z-10 text-center py-4 text-xs font-semibold text-slate-400">
+        VocabPlay - Apprentissage du vocabulaire anglais
+    </footer>
+
+    <!-- SCRIPT DU JEU -->
+    <script>
+        // ==========================================
+        // 1. RÉCUPÉRATION ET CHARGEMENT DU THÈME
+        // ==========================================
+        let currentTheme = null;
+        let speechRate = 0.8;
+
+        function loadTheme() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const themeId = urlParams.get('themeId');
+            const savedThemes = withTextFallback(JSON.parse(localStorage.getItem('app_vocab_themes')) || []);
+            
+            if (themeId) {
+                currentTheme = savedThemes.find(t => t.id === themeId);
+            }
+
+            if (!currentTheme) {
+                currentTheme = {
+                    id: "demo",
+                    name: "Weather",
+                    words: [
+                        { id: "sunny", fr: "Ensoleillé", en: "Sunny", speech: "It's sunny", image: "sunny.png" },
+                        { id: "cloudy", fr: "Nuageux", en: "Cloudy", speech: "It's cloudy", image: "cloudy.png" },
+                        { id: "foggy", fr: "Brumeux", en: "Foggy", speech: "It's foggy", image: "foggy.png" },
+                        { id: "raining", fr: "Il pleut", en: "Raining", speech: "It's raining", image: "raining.png" },
+                        { id: "snowing", fr: "Il neige", en: "Snowing", speech: "It's snowing", image: "snowing.png" },
+                        { id: "stormy", fr: "Orageux", en: "Stormy", speech: "It's stormy", image: "stormy.png" },
+                        { id: "windy", fr: "Venteux", en: "Windy", speech: "It's windy", image: "windy.png" }
+                    ]
+                };
+            }
+
+            document.getElementById('page-title').innerText = `Imagier - ${currentTheme.name}`;
+            document.getElementById('theme-title').innerText = currentTheme.name;
+
+            setupBackgroundEmojis(currentTheme.name);
+            renderVocabularyGrid(currentTheme.words);
+        }
+
+        // ==========================================
+        // 2. ÉMOTICÔNES ET DÉCORATION DU FOND DYNAMIQUE
+        // ==========================================
+        function setupBackgroundEmojis(themeName) {
+            const container = document.getElementById('bg-emojis-container');
+            container.innerHTML = '';
+
+            const nameLower = themeName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            
+            const themeDictionaries = [
+                { keywords: ['hallow', 'peur', 'monstre', 'sorcier'], emojis: ['🎃', '👻', '🦇', '🕷️', '🧙‍♀️', '🍬', '🌙', '💀'] },
+                { keywords: ['anim', 'zoo', 'pet', 'chien', 'chat', 'ferme'], emojis: ['🦁', '🐘', '🐵', '🐶', '🐱', '🐼', '🦊', '🐸', '🐷', '🐮'] },
+                { keywords: ['nourrit', 'food', 'repas', 'fruit', 'legume', 'manger'], emojis: ['🍎', '🍌', '🍕', '🍔', '🍰', '🧀', '🍓', '🍇', '🥕', '🥦'] },
+                { keywords: ['couleur', 'color'], emojis: ['🔴', '🟡', '🔵', '🟢', '🟣', '🟠', '🎨', '🌈'] },
+                { keywords: ['noel', 'christmas', 'hiver', 'neige'], emojis: ['🎄', '🎅', '⛄', '❄️', '🎁', '🔔', '⭐', '🦌'] },
+                { keywords: ['body', 'corps', 'face', 'visage'], emojis: ['👂', '👀', '👃', '👅', '👄', '🦶', '🖐️', '🧠', '💪', '🦵'] },
+                { keywords: ['school', 'ecole', 'class', 'fourniture'], emojis: ['📚', '✏️', '🎒', '🏫', '📏', '✂️', '🖍️', '🎓'] },
+                { keywords: ['weather', 'meteo', 'temps', 'saison'], emojis: ['☀️', '🌧️', '⛅', '⛈️', '❄️', '🌪️', '🌈', '🌂'] },
+                { keywords: ['cloth', 'vetement', 'habit'], emojis: ['👕', '👗', '👖', '👟', '👒', '🧣', '🧤', '🧦'] },
+                { keywords: ['house', 'maison', 'room', 'piece'], emojis: ['🏠', '🛏️', '🛁', '🛋️', '🚪', '🪟', '🍳', '🚽'] },
+                { keywords: ['sport', 'jeu', 'play'], emojis: ['⚽', '🏀', '🎾', '🏐', '🏉', '🏸', '🥊', '🚴'] },
+                { keywords: ['transport', 'vehicule', 'car', 'voiture'], emojis: ['🚗', '🚌', '🚓', '🚑', '🚒', '🚜', '🚲', '🚂', '✈️', '🚁'] }
+            ];
+
+            let emojiList = ['✨', '🌟', '🎈', '🧩', '🚀', '💡', '🎯', '🏆']; 
+            
+            for (const dict of themeDictionaries) {
+                if (dict.keywords.some(kw => nameLower.includes(kw))) {
+                    emojiList = dict.emojis;
+                    break;
+                }
+            }
+
+            for (let i = 0; i < 15; i++) {
+                const span = document.createElement('span');
+                span.className = 'floating-emoji';
+                span.innerText = emojiList[i % emojiList.length];
+                
+                span.style.top = `${Math.random() * 90}%`;
+                span.style.left = `${Math.random() * 90}%`;
+                span.style.fontSize = `${Math.random() * 2 + 2}rem`;
+                span.style.animationDelay = `${Math.random() * 5}s`;
+                span.style.animationDuration = `${Math.random() * 6 + 8}s`;
+
+                container.appendChild(span);
+            }
+        }
+
+        // ==========================================
+        // 3. AFFICHAGE DES CARTES DE VOCABULAIRE
+        // ==========================================
+        function renderVocabularyGrid(words) {
+            const grid = document.getElementById('words-grid');
+            grid.innerHTML = '';
+
+            if (!words || words.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center p-8 bg-white rounded-2xl shadow-sm text-slate-400">
+                        Aucun mot disponible dans ce thème.
+                    </div>`;
+                return;
+            }
+
+            words.forEach((word) => {
+                const card = document.createElement('div');
+                card.id = `card-${word.id || Math.random().toString(36).substr(2, 9)}`;
+                // Modification ici : on force la carte à être carrée (aspect-square) et on centre le contenu
+                card.className = "vocab-card bg-white rounded-3xl p-4 shadow-md border-2 border-slate-100 cursor-pointer flex items-center justify-center select-none hover:border-orange-400 aspect-square";
+                
+                card.onclick = () => speakWord(word, card);
+
+                const imageSrc = word.image ? word.image : '';
+
+                // Modification ici : On n'affiche que l'image, sans aucun texte en dessous.
+                // On garde un alt/title pour l'accessibilité si on passe la souris dessus.
+                card.innerHTML = `
+                    <div class="w-full h-full flex items-center justify-center overflow-hidden relative">
+                        <img src="${imageSrc}" alt="${word.en || word.fr}" title="${word.en || word.fr}"
+                             class="w-full h-full object-contain p-2"
+                             onerror="this.onerror=null; this.style.visibility='hidden';">
+                    </div>
+                `;
+
+                grid.appendChild(card);
+            });
+        }
+
+        // ==========================================
+        // 4. SYNTHÈSE VOCALE (AUDIO SPEECH API)
+        // ==========================================
+        function speakWord(word, cardElement) {
+            window.speechSynthesis.cancel();
+            document.querySelectorAll('.vocab-card').forEach(c => c.classList.remove('speaking'));
+
+            const textToSpeak = word.speech || word.en || word.fr;
+            if (!textToSpeak) return;
+
+            const utterance = new SpeechSynthesisUtterance(textToSpeak);
+            utterance.lang = 'en-US'; 
+            utterance.rate = speechRate;
+
+            if (cardElement) {
+                cardElement.classList.add('speaking');
+            }
+
+            utterance.onend = () => {
+                if (cardElement) cardElement.classList.remove('speaking');
+            };
+
+            utterance.onerror = () => {
+                if (cardElement) cardElement.classList.remove('speaking');
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function setSpeechRate(rate) {
+            speechRate = rate;
+            
+            const btnSlow = document.getElementById('rate-slow');
+            const btnNormal = document.getElementById('rate-normal');
+
+            if (rate === 0.8) {
+                btnSlow.className = "px-2.5 py-1 text-xs rounded-lg font-bold bg-orange-500 text-white shadow-sm";
+                btnNormal.className = "px-2.5 py-1 text-xs rounded-lg font-bold bg-white text-slate-700 shadow-sm border border-slate-200";
+            } else {
+                btnNormal.className = "px-2.5 py-1 text-xs rounded-lg font-bold bg-orange-500 text-white shadow-sm";
+                btnSlow.className = "px-2.5 py-1 text-xs rounded-lg font-bold bg-white text-slate-700 shadow-sm border border-slate-200";
+            }
+        }
+
+        // ==========================================
+        // 5. NAVIGATION
+        // ==========================================
+        function goBack() {
+            window.speechSynthesis.cancel();
+            const themeParam = (currentTheme && currentTheme.id) ? `?themeId=${currentTheme.id}` : '';
+            window.location.href = `index.html${themeParam}`;
+        }
+
+        // ==========================================
+        // 6. IMPRESSION DES FLASHCARDS
+        // ==========================================
+        // 'small' : A4 paysage, 8 cartes par ligne (taille fixe) ; le jeu complet est répété sur plusieurs lignes par page
+        //           (un jeu par élève, pour ne pas gaspiller de feuilles)
+        // 'large' : A4 portrait, 2 cartes par page
+        function printFlashcards(mode) {
+            const words = (currentTheme && Array.isArray(currentTheme.words)) ? currentTheme.words : [];
+            if (!words.length) { alert("Aucun mot à imprimer dans ce thème."); return; }
+
+            // Nettoyage d'une éventuelle impression précédente
+            const old = document.getElementById('print-area');
+            if (old) old.remove();
+            const oldStyle = document.getElementById('print-page-style');
+            if (oldStyle) oldStyle.remove();
+
+            // Format de page demandé à l'imprimante
+            const pageStyle = document.createElement('style');
+            pageStyle.id = 'print-page-style';
+            pageStyle.textContent = mode === 'large'
+                ? '@page { size: A4 portrait; margin: 8mm; }'
+                : '@page { size: A4 landscape; margin: 6mm; }';
+            document.head.appendChild(pageStyle);
+
+            const area = document.createElement('div');
+            area.id = 'print-area';
+            area.className = mode === 'large' ? 'pa-large' : 'pa-small';
+
+            const loading = [];
+
+            // Crée une carte (image seule) pour un mot
+            function makeCard(word) {
+                const label = word.en || word.fr || word.speech || '';
+                const card = document.createElement('div');
+                card.className = 'pa-card';
+
+                const img = new Image();
+                img.alt = label;
+                loading.push(new Promise(resolve => {
+                    img.onload = resolve;
+                    img.onerror = () => {
+                        // Image introuvable : on la remplace par le mot écrit
+                        img.onerror = null;
+                        img.onload = resolve;
+                        img.src = window.makeWordCardImage ? window.makeWordCardImage(label) : '';
+                    };
+                }));
+                img.src = word.image || (window.makeWordCardImage ? window.makeWordCardImage(label) : '');
+
+                card.appendChild(img);
+                return card;
+            }
+
+            if (mode === 'large') {
+                // 2 grandes cartes par page
+                for (let i = 0; i < words.length; i += 2) {
+                    const page = document.createElement('div');
+                    page.className = 'pa-page';
+                    const grid = document.createElement('div');
+                    grid.className = 'pa-grid';
+                    words.slice(i, i + 2).forEach(w => grid.appendChild(makeCard(w)));
+                    page.appendChild(grid);
+                    area.appendChild(page);
+                }
+            } else {
+                // Petites cartes : un "jeu" complet = tout le vocabulaire du thème, sur des lignes de 8 cartes.
+                // On répète ce jeu autant de fois que possible sur la page (6 lignes), un jeu par élève,
+                // chaque jeu commençant sur une nouvelle ligne pour être facile à découper.
+                const COLS = 8, ROWS_PER_PAGE = 6;
+                const rowsPerSet = Math.ceil(words.length / COLS);
+
+                // Les lignes d'un jeu (la dernière ligne peut être incomplète : cases vides)
+                const setRows = [];
+                for (let r = 0; r < rowsPerSet; r++) setRows.push(words.slice(r * COLS, (r + 1) * COLS));
+
+                // Liste de toutes les lignes à imprimer
+                let allRows = [];
+                if (rowsPerSet <= ROWS_PER_PAGE) {
+                    const setsPerPage = Math.floor(ROWS_PER_PAGE / rowsPerSet);
+                    for (let c = 0; c < setsPerPage; c++) allRows = allRows.concat(setRows);
+                } else {
+                    allRows = setRows; // jeu trop grand pour une page : il se poursuit sur la page suivante
+                }
+
+                for (let i = 0; i < allRows.length; i += ROWS_PER_PAGE) {
+                    const page = document.createElement('div');
+                    page.className = 'pa-page';
+                    const grid = document.createElement('div');
+                    grid.className = 'pa-grid';
+                    allRows.slice(i, i + ROWS_PER_PAGE).forEach(rowWords => {
+                        for (let c = 0; c < COLS; c++) {
+                            if (rowWords[c]) {
+                                grid.appendChild(makeCard(rowWords[c]));
+                            } else {
+                                const empty = document.createElement('div');
+                                empty.className = 'pa-empty';
+                                grid.appendChild(empty);
+                            }
+                        }
+                    });
+                    page.appendChild(grid);
+                    area.appendChild(page);
+                }
+            }
+            document.body.appendChild(area);
+
+            const cleanup = () => {
+                const a = document.getElementById('print-area');
+                if (a) a.remove();
+                const st = document.getElementById('print-page-style');
+                if (st) st.remove();
+            };
+            window.addEventListener('afterprint', cleanup, { once: true });
+
+            // On attend que toutes les images soient chargées avant d'ouvrir la boîte d'impression
+            Promise.race([Promise.all(loading), new Promise(r => setTimeout(r, 6000))])
+                .then(() => setTimeout(() => window.print(), 150));
+        }
+
+        // Lancement au chargement de la page
+        window.addEventListener('DOMContentLoaded', loadTheme);
+    </script>
+</body>
+</html>

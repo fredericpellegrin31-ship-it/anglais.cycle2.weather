@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <!-- Mode "mots" : si un mot n'a pas d'image (partie enseignant), on affiche le mot écrit en anglais -->
+    <script>
+    (function () {
+        function escapeXml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function wrapLines(text) {
+            var words = text.split(/\s+/).filter(Boolean);
+            if (words.length <= 1) return words.length ? words : [''];
+            var lines = [], cur = '';
+            words.forEach(function (w) {
+                if (cur && (cur + ' ' + w).length > 12) { lines.push(cur); cur = w; }
+                else { cur = cur ? cur + ' ' + w : w; }
+            });
+            if (cur) lines.push(cur);
+            return lines.slice(0, 4);
+        }
+        // Génère une "image" (SVG en data-URI) contenant le mot anglais écrit
+        window.makeWordCardImage = function (text) {
+            var lines = wrapLines(String(text || '').trim());
+            var longest = Math.max.apply(null, lines.map(function (l) { return l.length; }).concat([1]));
+            var size = Math.max(34, Math.min(120, Math.floor(340 / (longest * 0.58))));
+            var lineH = size * 1.15;
+            var startY = 200 - ((lines.length - 1) * lineH) / 2;
+            var tspans = lines.map(function (l, i) {
+                return '<text x="200" y="' + (startY + i * lineH) + '" text-anchor="middle" dominant-baseline="central" ' +
+                    'font-family="Segoe UI, Tahoma, Arial, sans-serif" font-weight="800" font-size="' + size + '" fill="#1e293b">' +
+                    escapeXml(l) + '</text>';
+            }).join('');
+            var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">' +
+                '<rect x="8" y="8" width="384" height="384" rx="48" fill="#ffffff" stroke="#fdba74" stroke-width="10"/>' +
+                tspans + '</svg>';
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        };
+        function hasImage(w) {
+            return [w.image, w.img, w.picture, w.src].some(function (v) { return typeof v === 'string' && v.trim() !== ''; });
+        }
+        // Applique le mode "mots" à tous les thèmes enregistrés (sans modifier le stockage)
+        window.withTextFallback = function (themes) {
+            if (!Array.isArray(themes)) return themes;
+            themes.forEach(function (t) {
+                if (!t || !Array.isArray(t.words)) return;
+                t.words.forEach(function (w) {
+                    if (w && !hasImage(w)) {
+                        var label = w.en || w.speech || w.fr || '';
+                        if (label) w.image = window.makeWordCardImage(label);
+                    }
+                });
+            });
+            return themes;
+        };
+    })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Weather Safari - Vocabulaire</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #051005; touch-action: none; user-select: none; -webkit-user-select: none; }
+        
+        #ui-layer { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; color: white; z-index: 100; }
+        
+        .menu-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; pointer-events: all; padding: 20px; text-align: center; }
+        
+        .btn { 
+            pointer-events: all; background: #eab308; color: #1a2f1a; padding: 12px 24px; border-radius: 50px; 
+            font-size: 1.5rem; margin: 8px; cursor: pointer; transition: all 0.2s; border: 3px solid #1a2f1a; 
+            min-width: 200px; text-align: center; box-shadow: 0 4px 0px #854d0e; font-weight: 900; text-transform: uppercase;
+        }
+        .btn:active { transform: translateY(4px); box-shadow: 0 0px 0px #854d0e; }
+
+        #timer-container { position: absolute; top: 0; left: 0; width: 100%; height: 8px; background: rgba(0,0,0,0.3); display: none; z-index: 150; }
+        #timer-bar { width: 100%; height: 100%; background: #ef4444; transition: width 0.1s linear; }
+
+        #feedback-text {
+            position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+            font-size: clamp(3rem, 12vw, 5rem); font-weight: 900; text-shadow: 4px 4px 0px #000;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 50; text-align: center; width: 90%;
+        }
+        
+        #end-screen { position: absolute; inset: 0; background: rgba(0,0,0,0.9); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 200; color: white; pointer-events: all; padding: 15px; text-align: center; }
+        
+        .control-btn { 
+            background: #eab308; width: 60px; height: 60px; border-radius: 50%; 
+            display: flex; align-items: center; justify-content: center; pointer-events: auto;
+            font-size: 1.5rem; border: 3px solid #1a2f1a; cursor: pointer; box-shadow: 0 4px 0px #854d0e;
+        }
+        .control-btn:active { transform: translateY(3px); box-shadow: none; }
+
+        .star { font-size: clamp(40px, 10vw, 80px); color: #ccc; margin: 0 5px; }
+        .star.active { color: #ffd700; text-shadow: 0 0 20px gold; animation: pop 0.5s ease-out forwards; }
+        @keyframes pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+        
+        #confetti-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 300; display: none; }
+    </style>
+</head>
+<body>
+
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Écran de démarrage -->
+    <div id="start-screen" class="menu-overlay">
+        <header class="absolute top-0 left-0 right-0 bg-white shadow-md p-3 md:p-4 flex justify-between items-center border-t-4 border-[#012169]">
+<button onclick="goBack()" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-bold transition-colors bg-slate-200 text-slate-700 hover:bg-slate-300 text-xs sm:text-sm md:text-base flex items-center gap-2">
+                🏠 Menu Principal
+            </button>
+        </header>
+        <h1 id="theme-title" class="text-5xl md:text-7xl font-black mb-4 text-yellow-500 uppercase tracking-tighter">CHARGEMENT...</h1>
+        <p class="mb-10 text-xl md:text-2xl text-green-500 font-bold uppercase">Trouve le bon mot dans les enclos !</p>
+        <button class="btn" onclick="startGame()">LANCER LE TOUR</button>
+    </div>
+
+    <!-- Écran de fin -->
+    <div id="end-screen">
+        <h2 id="end-title" class="text-5xl font-black mb-4 text-yellow-500">TOUR TERMINÉ</h2>
+        <div class="flex mb-4" id="stars-container">
+            <span class="star">★</span>
+            <span class="star">★</span>
+            <span class="star">★</span>
+        </div>
+        <p id="score-text" class="text-2xl mb-8 font-bold"></p>
+        <button class="btn" onclick="location.reload()">RECOMMENCER</button>
+        <button class="btn" style="background: #ef4444; color: white; border-color: #7f1d1d; box-shadow: 0 4px 0px #7f1d1d;" onclick="goBack()">MENU PRINCIPAL</button>
+    </div>
+
+    <!-- Interface en jeu -->
+    <div id="ui-layer">
+        <div id="timer-container"><div id="timer-bar"></div></div>
+        
+        <!-- Bloc en HAUT À GAUCHE (Quitter + Score) -->
+        <div class="absolute top-4 left-4 flex flex-col items-start gap-3 z-[300] pointer-events-auto">
+            <button onclick="goBack()" class="flex items-center gap-2 bg-red-600/80 hover:bg-red-600 backdrop-blur border-2 border-white text-white px-4 py-2 rounded-xl font-bold shadow-md transition-colors">
+                <span class="hidden sm:inline">Quitter</span> <span>✖</span>
+            </button>
+            <div class="bg-black/70 px-4 py-2 rounded-xl font-bold text-yellow-500 border-2 border-yellow-500 shadow-md">
+                ENCLOS: <span id="progress">1</span> / <span id="total-quests">10</span>
+            </div>
+        </div>
+
+        <div id="feedback-text"></div>
+        
+        <!-- Bouton audio en BAS À DROITE -->
+        <button class="control-btn absolute bottom-5 right-5 pointer-events-auto" onclick="forceReplay(event)">🔊</button>
+    </div>
+
+    <script>
+        // ==========================================
+        // SYSTÈME DE THÈME DYNAMIQUE
+        // ==========================================
+        let currentTheme = null;
+        let vocabulary = [];
+        let totalQuestions = 10;
+
+        function loadThemeData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const themeId = urlParams.get('themeId');
+            const savedThemes = withTextFallback(JSON.parse(localStorage.getItem('app_vocab_themes')) || []);
+            
+            if (themeId) currentTheme = savedThemes.find(t => t.id === themeId);
+
+            if (!currentTheme) {
+                currentTheme = {
+                    name: "Weather",
+                    words: [
+                        { id: 'sunny', en: 'Sunny', speech: "It's sunny", image: 'sunny.png' },
+                        { id: 'cloudy', en: 'Cloudy', speech: "It's cloudy", image: 'cloudy.png' },
+                        { id: 'foggy', en: 'Foggy', speech: "It's foggy", image: 'foggy.png' },
+                        { id: 'raining', en: 'Raining', speech: "It's raining", image: 'raining.png' },
+                        { id: 'snowing', en: 'Snowing', speech: "It's snowing", image: 'snowing.png' },
+                        { id: 'stormy', en: 'Stormy', speech: "It's stormy", image: 'stormy.png' },
+                        { id: 'windy', en: 'Windy', speech: "It's windy", image: 'windy.png' }
+                    ]
+                };
+            }
+
+            vocabulary = currentTheme.words;
+            totalQuestions = Math.min(10, vocabulary.length * 2);
+            if(totalQuestions < 4) totalQuestions = 4;
+            
+            document.getElementById('total-quests').innerText = totalQuestions;
+            document.title = `Weather Safari - ${currentTheme.name}`;
+            document.getElementById('theme-title').innerText = currentTheme.name;
+        }
+
+        function speak(text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            setTimeout(() => {
+                const msg = new SpeechSynthesisUtterance(text);
+                msg.lang = 'en-US'; msg.rate = 0.8; 
+                window.speechSynthesis.speak(msg);
+            }, 50); 
+        }
+
+        window.forceReplay = function(e) {
+            if(e) e.stopPropagation();
+            if(isPlaying && targetItem) speak(targetItem.speech || targetItem.en);
+        };
+
+        function goBack() {
+            window.speechSynthesis.cancel();
+            const themeParam = (currentTheme && currentTheme.id) ? `?themeId=${currentTheme.id}` : '';
+            window.location.href = `index.html${themeParam}`;
+        }
+
+        // ==========================================
+        // VARIABLES GLOBALES 3D
+        // ==========================================
+        let scene, camera, renderer, car, clock;
+        let currentQuestion = 1, score = 0, targetItem = null;
+        let activeEnclosures = [], currentEnclosure = null;
+        let isPlaying = false, isMoving = false, isAnswered = false;
+        let gameSpeed = 0, targetSpeed = 0;
+        let roadTiles = [], scenery = [];
+        let timeLeft = 15; const totalTime = 15; let timerInterval = null;
+        let confettis = [], confCanvas, confCtx;
+
+        const textureLoader = new THREE.TextureLoader();
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x051005); 
+            scene.fog = new THREE.Fog(0x051005, 30, 120);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(32, 8, 0); 
+            camera.lookAt(-5, 3, 0);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            sunLight.position.set(20, 40, 10);
+            sunLight.castShadow = true;
+            scene.add(sunLight);
+
+            scene.add(new THREE.HemisphereLight(0x00ff00, 0x002200, 0.4));
+
+            createRoad();
+            createRealisticJurassicCar(); // La vraie voiture d'origine
+
+            for(let i=0; i<80; i++) {
+                createRealisticTree(-18 - Math.random()*25, -i * 6 + 120);
+                if(i % 2 === 0) createRealisticTree(-30 - Math.random()*25, -i * 6 + 120);
+            }
+
+            confCanvas = document.getElementById('confetti-canvas');
+            confCtx = confCanvas.getContext('2d');
+            resizeConfetti();
+            animate();
+
+            window.addEventListener('mousedown', onSceneClick);
+            window.addEventListener('touchstart', (e) => {
+                onSceneClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+            });
+        }
+
+        function createRoad() {
+            for(let i=0; i<60; i++) {
+                const segment = new THREE.Group();
+                const road = new THREE.Mesh(new THREE.BoxGeometry(14, 0.2, 10), new THREE.MeshPhongMaterial({ color: 0x1a1a1a }));
+                road.receiveShadow = true; segment.add(road);
+                const rail = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 10), new THREE.MeshPhongMaterial({ color: 0x666666 }));
+                rail.position.y = 0.15; segment.add(rail);
+                segment.position.z = -i * 10 + 60; scene.add(segment); roadTiles.push(segment);
+            }
+        }
+
+        // ==========================================
+        // VOITURE D'ORIGINE (RÉTABLIE)
+        // ==========================================
+        function createRealisticJurassicCar() {
+            car = new THREE.Group();
+            
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0x2d5a27 }); 
+            const yellowMat = new THREE.MeshPhongMaterial({ color: 0xeab308 }); 
+            const redMat = new THREE.MeshPhongMaterial({ color: 0x991b1b }); 
+            const blackMat = new THREE.MeshPhongMaterial({ color: 0x111111 }); 
+            const glassMat = new THREE.MeshPhongMaterial({ color: 0x222222, transparent: true, opacity: 0.8 }); 
+            const hubMat = new THREE.MeshPhongMaterial({ color: 0xcc1111 }); 
+            
+            const baseBody = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.7, 5.4), bodyMat);
+            baseBody.position.y = 0.85; baseBody.castShadow = true; car.add(baseBody);
+
+            const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.2, 5.45), yellowMat);
+            stripe.position.y = 1.25; car.add(stripe);
+
+            const hood = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.3, 1.6), yellowMat);
+            hood.position.set(0, 1.35, 1.9); hood.rotation.x = 0.08; car.add(hood);
+
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.9, 3.6), redMat);
+            cabin.position.set(0, 1.8, -0.4); car.add(cabin);
+
+            const windows = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.6, 3.4), glassMat);
+            windows.position.set(0, 1.8, -0.4); car.add(windows);
+
+            const windShield = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 0.1), glassMat);
+            windShield.position.set(0, 1.65, 1.55); windShield.rotation.x = -Math.PI / 3.5; car.add(windShield);
+
+            const backGlass = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.1), glassMat);
+            backGlass.position.set(0, 1.7, -2.2); backGlass.rotation.x = Math.PI / 8; car.add(backGlass);
+
+            const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 2.2), glassMat);
+            roofGlass.position.set(0, 2.26, -0.4); car.add(roofGlass);
+
+            const railGeo = new THREE.CylinderGeometry(0.05, 0.05, 3.8, 8);
+            [0.9, -0.9].forEach(x => {
+                const rail = new THREE.Mesh(railGeo, blackMat); rail.rotation.x = Math.PI/2; rail.position.set(x, 2.35, -0.4); car.add(rail);
+                for(let z=-1.5; z<=1.5; z+=1.5) {
+                    const support = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.1), blackMat);
+                    support.position.set(x, 2.25, -0.4 + z); car.add(support);
+                }
+            });
+
+            const spotGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.2, 16);
+            for(let i=-0.6; i<=0.6; i+=0.4) {
+                const spot = new THREE.Mesh(spotGeo, blackMat); spot.rotation.x = Math.PI/2; spot.position.set(i, 2.4, 0.6); car.add(spot);
+                const lightLens = new THREE.Mesh(new THREE.CircleGeometry(0.12, 16), new THREE.MeshBasicMaterial({color: 0xffffee}));
+                lightLens.position.set(i, 2.4, 0.71); car.add(lightLens);
+            }
+
+            const grill = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.1), blackMat);
+            grill.position.set(0, 0.85, 2.7); car.add(grill);
+
+            const bullbarGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.4, 8);
+            const bb1 = new THREE.Mesh(bullbarGeo, blackMat); bb1.rotation.z = Math.PI/2; bb1.position.set(0, 0.9, 2.9); car.add(bb1);
+            const bb2 = new THREE.Mesh(bullbarGeo, blackMat); bb2.rotation.z = Math.PI/2; bb2.position.set(0, 0.6, 2.9); car.add(bb2);
+
+            const spareTire = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.3, 24), blackMat);
+            spareTire.rotation.x = Math.PI/2; spareTire.position.set(0, 1.2, -2.85); car.add(spareTire);
+            
+            const wheelGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.6, 24);
+            const fenderGeo = new THREE.BoxGeometry(0.8, 0.15, 1.8);
+            [[1.2, 0.65, 1.7], [-1.2, 0.65, 1.7], [1.2, 0.65, -1.6], [-1.2, 0.65, -1.6]].forEach(pos => {
+                const w = new THREE.Group();
+                const tire = new THREE.Mesh(wheelGeo, blackMat); tire.rotation.z = Math.PI/2; w.add(tire);
+                const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.62, 12), hubMat); hub.rotation.z = Math.PI/2; w.add(hub);
+                w.position.set(...pos); car.add(w);
+                const fender = new THREE.Mesh(fenderGeo, blackMat); fender.position.set(pos[0], pos[1] + 0.65, pos[2]); car.add(fender);
+            });
+
+            car.position.y = 0.2; car.rotation.y = Math.PI; scene.add(car);
+        }
+
+        function createRealisticTree(x, z) {
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.6, 8, 7), new THREE.MeshPhongMaterial({color: 0x3d2b1f}));
+            trunk.position.y = 4; tree.add(trunk);
+            const scale = 0.8 + Math.random() * 1.5;
+            for(let i=0; i<3; i++) {
+                const leaves = new THREE.Mesh(new THREE.DodecahedronGeometry([3.5, 2.8, 2][i], 1), new THREE.MeshPhongMaterial({color: 0x1e5631, flatShading: true}));
+                leaves.position.set((Math.random() - 0.5) * 1.5, [6, 7.5, 9][i], (Math.random() - 0.5) * 1.5);
+                leaves.scale.y = 0.8; tree.add(leaves);
+            }
+            tree.scale.set(scale, scale, scale); tree.position.set(x, 0, z); tree.rotation.y = Math.random() * Math.PI; scene.add(tree); scenery.push(tree);
+        }
+
+        // ==========================================
+        // LOGIQUE DE JEU
+        // ==========================================
+        function spawnEnclosure() {
+            targetItem = vocabulary[Math.floor(Math.random() * vocabulary.length)];
+            let choices = [targetItem];
+            let otherWords = vocabulary.filter(w => w.id !== targetItem.id).sort(() => Math.random() - 0.5); 
+            for(let i = 0; i < 3 && i < otherWords.length; i++) choices.push(otherWords[i]);
+            while(choices.length < 4) choices.push(vocabulary[Math.floor(Math.random() * vocabulary.length)]);
+            choices.sort(() => Math.random() - 0.5);
+            
+            const newEnclosure = new THREE.Group();
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(1, 12, 30), new THREE.MeshPhongMaterial({ color: 0x222222 }));
+            wall.position.set(-15, 6, 0); newEnclosure.add(wall);
+
+            choices.forEach((choice, i) => {
+                const signGroup = new THREE.Group();
+                const bgBox = new THREE.Mesh(new THREE.BoxGeometry(0.1, 4.2, 4.2), new THREE.MeshPhongMaterial({ color: 0xffffff }));
+                signGroup.add(bgBox);
+
+                const fallbackImg = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+                const tex = textureLoader.load(choice.image || fallbackImg);
+                const imgPlane = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+                imgPlane.position.x = 0.06; imgPlane.rotation.y = Math.PI / 2;
+                signGroup.add(imgPlane);
+
+                signGroup.rotation.y = -0.15; 
+                signGroup.position.set(-13, 5, -6.75 + (i * 4.5));
+                
+                signGroup.userData = { id: choice.id, info: choice, bgMesh: bgBox };
+                bgBox.userData = { parentGroup: signGroup };
+                imgPlane.userData = { parentGroup: signGroup };
+                newEnclosure.add(signGroup);
+            });
+
+            newEnclosure.position.z = -180; scene.add(newEnclosure);
+            activeEnclosures.push(newEnclosure); currentEnclosure = newEnclosure;
+        }
+
+        function onSceneClick(e) {
+            if (!isPlaying || isMoving || isAnswered || !currentEnclosure) return;
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(currentEnclosure.children, true);
+            const clickedPart = intersects.find(i => i.object.userData && i.object.userData.parentGroup);
+            if (clickedPart) handleSelection(clickedPart.object.userData.parentGroup);
+        }
+
+        function handleSelection(signGroup) {
+            isAnswered = true; stopTimer();
+            const feedbackEl = document.getElementById('feedback-text');
+            const correctSign = currentEnclosure.children.find(c => c.userData && c.userData.id === targetItem.id);
+            
+            if (signGroup.userData.id === targetItem.id) {
+                score++; feedbackEl.innerText = "EXCELLENT! 🌟"; feedbackEl.style.color = "#4ade80";
+                signGroup.userData.bgMesh.material.color.setHex(0x4ade80); speak("Well done!");
+            } else {
+                feedbackEl.innerText = "OOPS..."; feedbackEl.style.color = "#ef4444";
+                signGroup.userData.bgMesh.material.color.setHex(0xef4444); 
+                if (correctSign) correctSign.userData.bgMesh.material.color.setHex(0x4ade80);
+                speak("No, that was " + (signGroup.userData.info.speech || signGroup.userData.info.en));
+            }
+            
+            feedbackEl.style.opacity = "1";
+            setTimeout(() => { feedbackEl.style.opacity = "0"; }, 2500);
+            setTimeout(nextTurn, 3500);
+        }
+
+        function startTimer() {
+            timeLeft = totalTime; isAnswered = false;
+            document.getElementById('timer-container').style.display = 'block';
+            if(timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft -= 0.1;
+                document.getElementById('timer-bar').style.width = `${(timeLeft / totalTime) * 100}%`;
+                if (timeLeft <= 0) { clearInterval(timerInterval); if (!isAnswered) handleTimeOut(); }
+            }, 100);
+        }
+
+        function stopTimer() { clearInterval(timerInterval); document.getElementById('timer-container').style.display = 'none'; }
+
+        function handleTimeOut() {
+            isAnswered = true; stopTimer();
+            const feedbackEl = document.getElementById('feedback-text');
+            feedbackEl.innerText = "TEMPS ÉCOULÉ!"; feedbackEl.style.color = "#fbbf24"; feedbackEl.style.opacity = "1";
+            const correctSign = currentEnclosure.children.find(c => c.userData && c.userData.id === targetItem.id);
+            if (correctSign) correctSign.userData.bgMesh.material.color.setHex(0x4ade80);
+            setTimeout(() => { feedbackEl.style.opacity = "0"; }, 2500);
+            setTimeout(nextTurn, 3500);
+        }
+
+        function nextTurn() {
+            if (currentQuestion >= totalQuestions) { endGame(); return; }
+            currentQuestion++; document.getElementById('progress').innerText = currentQuestion;
+            spawnEnclosure(); isMoving = true; targetSpeed = 1.3; 
+        }
+
+        function startGame() {
+            if(vocabulary.length < 2) { alert("Il faut au moins 2 mots."); goBack(); return; }
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('end-screen').style.display = 'none';
+            
+            activeEnclosures.forEach(enc => scene.remove(enc));
+            activeEnclosures = []; currentEnclosure = null; confettis = [];
+            
+            isPlaying = true; currentQuestion = 1; score = 0;
+            document.getElementById('progress').innerText = currentQuestion;
+            spawnEnclosure(); isMoving = true; targetSpeed = 1.3;
+        }
+
+        function endGame() {
+            isPlaying = false; stopTimer();
+            document.getElementById('end-screen').style.display = 'flex';
+            document.getElementById('score-text').innerText = `Score: ${score} / ${totalQuestions}`;
+            
+            let ratio = score / totalQuestions;
+            let starCount = ratio >= 1 ? 3 : (ratio >= 0.7 ? 3 : (ratio >= 0.4 ? 2 : (ratio > 0 ? 1 : 0)));
+            document.querySelectorAll('.star').forEach((s, i) => { 
+                if(i < starCount) s.classList.add('active'); else s.classList.remove('active');
+            });
+
+            if (ratio === 1) { document.getElementById('confetti-canvas').style.display = 'block'; startFireworks(); }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            drawConfetti();
+
+            if (isPlaying) {
+                gameSpeed = THREE.MathUtils.lerp(gameSpeed, targetSpeed, 0.05);
+                roadTiles.forEach(t => { t.position.z += gameSpeed; if(t.position.z > 60) t.position.z -= 600; });
+                scenery.forEach(i => { i.position.z += gameSpeed; if(i.position.z > 60) i.position.z -= 480; });
+
+                activeEnclosures.forEach((enc, index) => {
+                    enc.position.z += gameSpeed;
+                    if(enc.position.z > 80) { scene.remove(enc); activeEnclosures.splice(index, 1); if(currentEnclosure === enc) currentEnclosure = null; }
+                });
+
+                if (currentEnclosure && isMoving && currentEnclosure.position.z > 0) {
+                    isMoving = false; targetSpeed = 0;
+                    setTimeout(() => { speak(targetItem.speech || targetItem.en); startTimer(); }, 500);
+                }
+                car.position.y = 0.2 + Math.sin(Date.now() * 0.01) * 0.02;
+            }
+            renderer.render(scene, camera);
+        }
+
+        function resizeConfetti() { confCanvas.width = window.innerWidth; confCanvas.height = window.innerHeight; }
+        function startFireworks() { for(let i=0; i<150; i++) confettis.push({ x: Math.random() * window.innerWidth, y: -Math.random() * window.innerHeight, r: 5 + Math.random() * 8, color: `hsl(${Math.random() * 360}, 100%, 50%)`, vy: 3 + Math.random() * 5, vx: Math.random() * 4 - 2, rotation: Math.random() * Math.PI }); }
+        function drawConfetti() {
+            if (!confCtx) return;
+            confCtx.clearRect(0,0,confCanvas.width, confCanvas.height);
+            confettis.forEach((c) => {
+                c.y += c.vy; c.x += c.vx; c.rotation += 0.1;
+                if(c.y > confCanvas.height) c.y = -10;
+                confCtx.save(); confCtx.translate(c.x, c.y); confCtx.rotate(c.rotation);
+                confCtx.fillStyle = c.color; confCtx.fillRect(-c.r/2, -c.r/2, c.r, c.r); confCtx.restore();
+            });
+        }
+
+        window.onload = () => { loadThemeData(); init(); };
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight); resizeConfetti();
+        });
+    </script>
+</body>
+</html>

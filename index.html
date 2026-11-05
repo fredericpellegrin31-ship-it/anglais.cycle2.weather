@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jeux d'Anglais - The Weather (Cycle 2)</title>
+    <!-- Utilisation de Tailwind CSS pour un style rapide et responsive -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Quelques styles personnalisés pour une ambiance Halloween */
+        body {
+            background-color: #0f3b66;
+            color: #e0e0e0; /* Texte clair */
+            font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif; /* Police ludique */
+            /* Ajout d'un léger motif de fond de toile d'araignée très subtil (optionnel, simulé ici par une couleur unie) */
+            background-image: radial-gradient(#1d5a94 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        h1, h2 {
+            color: #ffc933; /* Orange Halloween */
+            text-shadow: 2px 2px 4px #000000;
+        }
+
+        .game-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            background-color: #1d5a94;
+            border: 2px solid #ffc933;
+            border-radius: 15px;
+            overflow: hidden; /* Pour que l'image respecte les bords arrondis */
+        }
+
+        .game-card:hover {
+            transform: scale(1.05); /* Effet de zoom au survol */
+            box-shadow: 0 10px 20px rgba(255, 201, 51, 0.4); /* Ombre orange */
+            cursor: pointer;
+        }
+
+        .game-image-container {
+            width: 100%;
+            height: 200px; /* Hauteur fixe pour l'image */
+            background-color: #000; /* Fond noir si l'image ne couvre pas tout */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .game-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: cover; /* Remplit le conteneur en gardant les proportions */
+        }
+
+        .game-title {
+            padding: 15px;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #fff;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-8">
+
+    <header class="text-center mb-12">
+        <h1 class="text-5xl font-extrabold mb-4 animate-bounce">☀️ The Weather! 🌧️</h1>
+        <h2 class="text-3xl font-bold mb-2">Anglais</h2>
+        <p class="text-xl text-gray-300 max-w-2xl mx-auto">
+            Bienvenue ! Choisis un jeu ci-dessous pour réviser ton anglais et apprendre à parler de la météo : sunny, cloudy, rainy...
+        </p>
+    </header>
+
+    <main class="w-full max-w-6xl">
+        <!-- Grille responsive : 1 colonne sur mobile, 2 sur tablette, 4 sur grand écran -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+
+            <!-- Jeu 1 -->
+            <a href="jeu1.html" class="game-card block no-underline">
+                <div class="game-image-container relative">
+                    <!-- Image du jeu 1. Utilisation d'un placeholder si l'image n'est pas encore là -->
+                    <img src="jeu1.png" alt="Miniature Je révise" class="game-image" onerror="this.src='https://placehold.co/400x300/ff9900/000000?text=jeu1.png';">
+                </div>
+                <div class="game-title">Je révise</div>
+            </a>
+
+            <!-- Jeu 2 -->
+            <a href="jeu4.html" class="game-card block no-underline">
+                <div class="game-image-container relative">
+                    <!-- Image du jeu 2 -->
+                    <img src="jeu4.png" alt="Miniature Le safari de la météo" class="game-image" onerror="this.src='https://placehold.co/400x300/8a2be2/ffffff?text=jeu4.png';">
+                </div>
+                <div class="game-title">Le safari de la météo</div>
+            </a>
+
+            <!-- Jeu 3 -->
+            <a href="jeu5.html" class="game-card block no-underline">
+                <div class="game-image-container relative">
+                    <!-- Image du jeu 3 -->
+                    <img src="jeu5.png" alt="Miniature Weather racing" class="game-image" onerror="this.src='https://placehold.co/400x300/00cc00/000000?text=jeu5.png';">
+                </div>
+                <div class="game-title">Weather racing</div>
+            </a>
+
+            <!-- Jeu 4 -->
+            <a href="jeu11.html" class="game-card block no-underline">
+                <div class="game-image-container relative">
+                    <!-- Image du jeu 4 -->
+                    <img src="jeu11.png" alt="Miniature Weather quiz" class="game-image" onerror="this.src='https://placehold.co/400x300/cc0000/ffffff?text=jeu11.png';">
+                </div>
+                <div class="game-title">Weather quiz</div>
+            </a>
+
+            <!-- Jeu 5 -->
+            <a href="jeu12.html" class="game-card block no-underline">
+                <div class="game-image-container relative">
+                    <!-- Image du jeu 5 -->
+                    <img src="jeu12.png" alt="Miniature Défi oral : What&#39;s the weather?" class="game-image" onerror="this.src='https://placehold.co/400x300/0099cc/ffffff?text=jeu12.png';">
+                </div>
+                <div class="game-title">Défi oral : What&#39;s the weather?</div>
+            </a>
+        </div>
+    </main>
+
+    <footer class="mt-16 mb-8 text-center w-full">
+        <p class="text-gray-500 text-sm mb-4">&copy; Anglais pour le Cycle 2</p>
+    </footer>
+
+</body>
+</html>
